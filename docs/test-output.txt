@@ -1,0 +1,20 @@
+test_argv (test_core.Core.test_argv) ... ok
+test_atomic_batch (test_core.Core.test_atomic_batch) ... ok
+test_dedupe_and_control (test_core.Core.test_dedupe_and_control) ... ok
+test_no_path_traversal (test_core.Core.test_no_path_traversal) ... ok
+test_no_secrets_status (test_core.Core.test_no_secrets_status) ... ok
+test_validation (test_core.Core.test_validation) ... ok
+test_native_framed_roundtrip (test_integration.Integration.test_native_framed_roundtrip) ... ok
+test_pause_resume_range_and_original_hash (test_integration.Integration.test_pause_resume_range_and_original_hash) ... ok
+test_sigkill_lock_and_recovery (test_integration.Integration.test_sigkill_lock_and_recovery) ... ok
+test_termination_restart_requires_resume (test_integration.Integration.test_termination_restart_requires_resume) ... ok
+test_10bit_not_stream_copied (test_media.Media.test_10bit_not_stream_copied) ... ok
+test_real_classroom_captions_chapters_framerate (test_media.Media.test_real_classroom_captions_chapters_framerate) ... ok
+test_atomic_publish_collision_and_idempotence (test_worker.Worker.test_atomic_publish_collision_and_idempotence) ... ok
+test_cancel_at_engine_exit_is_not_completed (test_worker.Worker.test_cancel_at_engine_exit_is_not_completed) ... ok
+test_status_is_native_message_bounded (test_worker.Worker.test_status_is_native_message_bounded) ... ok
+
+----------------------------------------------------------------------
+Ran 15 tests in 25.036s
+
+OK
