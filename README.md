@@ -2,7 +2,7 @@
 
 **Reviewable preview for Mac testing — not yet live-site or browser-integration validated.**
 
-A Chrome/Firefox extension and small Python native-messaging companion for saving videos you have permission to use in class. No web service, account, telemetry, remote download proxy, cloud transcription, or bundled third-party executable. Built in the VM; nothing has been installed on your Mac.
+A Chrome/Firefox extension and small Python native-messaging companion for saving videos you have permission to use in class. No web service, account, telemetry, remote download proxy, cloud transcription, or bundled third-party executable. This preview is distributed as source and unsigned browser builds.
 
 ## Start here
 
@@ -19,6 +19,10 @@ A Chrome/Firefox extension and small Python native-messaging companion for savin
 - Keep chapters. Save sanitized source provenance beside the video; classroom copy also embeds that source in its comment. Signed query parameters are excluded (YouTube video ID retained). Provider-origin metadata may remain in source media.
 - Optional AV1 storage copy is slower and less projector-compatible. It is attempted only for sources at least 720p and not already AV1/HEVC/VP9; capped at1080p; kept only after full decode/track/chapter/frame-rate checks **and** at least15% reduction. Original remains.
 - Stable names look like `00_Lesson title_1a2b3c4d_original.mkv` and `00_Lesson title_1a2b3c4d_classroom.mp4`. The short job ID prevents collisions; files are published atomically without replacement. Original format is not falsely labelled MP4.
+
+### Direct file downloads
+
+Select or paste a direct MP4, WebM, MP3, M4A or WAV file link and choose **Download direct files in browser**. The browser controls the download and destination; this path does not use the companion, conversion or durable queue. A link ending in one of these extensions does not guarantee the server will allow a download.
 
 ### Everyday flow
 

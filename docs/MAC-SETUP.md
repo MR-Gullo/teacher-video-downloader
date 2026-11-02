@@ -1,6 +1,8 @@
 # Mac setup — run these on your Mac only when ready
 
-This is a source preview, not a signed store release. Review the files before running. The VM did not install anything on your Mac. Keep the extracted folder in a stable location (for example `~/Applications/teacher-video-downloader`).
+This is a source preview, not a signed store release. Review the files before running. The preview is not a signed store release. Keep the extracted folder in a stable location (for example `~/Applications/teacher-video-downloader`).
+
+For direct MP4, WebM, MP3, M4A or WAV links, the extension can use the browser download manager without the companion. The steps below add support for page downloads, conversion and the local queue.
 
 ## 1. Dependencies
 

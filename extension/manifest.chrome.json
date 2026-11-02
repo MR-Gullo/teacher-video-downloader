@@ -1,1 +1,41 @@
-{"manifest_version":3,"name":"LessonShelf · Local Video","version":"0.1.0","description":"A private, local download queue for classroom videos you have permission to save.","permissions":["activeTab","tabs","storage","scripting","nativeMessaging","webRequest"],"optional_host_permissions":["http://*/*","https://*/*"],"action":{"default_popup":"popup.html","default_title":"LessonShelf"},"background":{"service_worker":"background.js"},"content_security_policy":{"extension_pages":"script-src 'self'; object-src 'self'"}}
+{
+  "manifest_version": 3,
+  "name": "LessonShelf \u00b7 Local Video",
+  "version": "0.1.0",
+  "description": "A private, local download queue for classroom videos you have permission to save.",
+  "permissions": [
+    "activeTab",
+    "tabs",
+    "storage",
+    "scripting",
+    "nativeMessaging",
+    "webRequest",
+    "downloads"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "LessonShelf",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  }
+}

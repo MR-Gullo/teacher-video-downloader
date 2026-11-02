@@ -2,6 +2,7 @@
 const api = globalThis.browser || chrome;
 const $ = id => document.getElementById(id);
 let candidates = [], selected = new Set(), current = null, busy = false, polling = false, connected = false;
+function applyTheme(theme) { document.documentElement.dataset.theme=theme; $('theme').textContent=theme==='dark'?'Light theme':'Dark theme'; $('theme').setAttribute('aria-label',`Switch to ${theme==='dark'?'light':'dark'} theme`); }
 const settingsIds = ['quality','audio','captions','course','copy','engine'];
 function feedback(message) { $('feedback').textContent = message; $('feedback').hidden = !message; }
 function httpURL(raw) { const url = new URL(raw); if (!['http:','https:'].includes(url.protocol) || url.username || url.password) throw new Error('Use an HTTP or HTTPS link without embedded credentials.'); return url.href; }
@@ -43,8 +44,8 @@ async function scan() {
   if(!current)return; $('scan').disabled=true;feedback('');
   try{
     const result=await api.scripting.executeScript({target:{tabId:current.id},func:()=>[...document.querySelectorAll('video,audio,video source,audio source,a[href]')].map(e=>e.currentSrc||e.src||e.href).filter(u=>/^https?:/.test(u)&&(/\.(m3u8|mpd|mp4|webm|mp3|m4a)(?:[?#]|$)/i.test(u)||[...document.querySelectorAll('video,audio')].some(v=>v.currentSrc===u))).slice(0,40)});
-    const urls=[...new Set(result.flatMap(x=>x.result||[]))];urls.forEach((url,i)=>addCandidate({url,title:`${current.title || 'Video'} · media ${i+1}`,pageUrl:current.url,kind:'Page media'}));renderCandidates();
-    feedback(urls.length?`Found ${urls.length} media link(s). Select the ones you want; nothing has started.`:'No direct media links found. Try the page URL with yt-dlp, or enable stream detection and play the video. Blob and protected media cannot be downloaded directly.');
+    const urls=[...new Set(result.flatMap(x=>x.result||[]))];urls.forEach((url,i)=>addCandidate({url,title:`${current.title || 'Video'} · media ${i+1}`,pageUrl:current.url,kind:'Page media'}));if(urls.length){selected.delete(current.url);for(const url of urls)if(/\.(mp4|webm|mp3|m4a|wav)$/i.test(new URL(url).pathname))selected.add(url);}renderCandidates();
+    feedback(urls.length?`Found ${urls.length} media link(s). Direct files are selected; check your selection before downloading.`:'No direct media links found. Try the page URL with yt-dlp, or enable stream detection and play the video. Blob and protected media cannot be downloaded directly.');
   }catch{feedback('This tab does not allow scanning yet. Open the extension from the video tab, or enable site access and try again.');}
   finally{$('scan').disabled=false;}
 }
@@ -79,6 +80,19 @@ function hints(){$('copy-hint').textContent=$('audio').value==='audio'?'Audio-on
 async function enqueue(){if(busy)return;feedback('');let jobs;try{const opts=settings();if(opts.course&&(/[\\/]|^\.{1,2}$/.test(opts.course)))throw new Error('Use a course name without slashes or path traversal.');const items=candidates.filter(x=>selected.has(x.url));for(const url of parseInput($('urls').value))if(!items.some(x=>x.url===url))items.push({url,title:'',pageUrl:''});if(!items.length)throw new Error('Select a page or media link, or paste a URL first.');if(items.length>50)throw new Error('Please queue at most 50 links at a time.');if(opts.engine==='n'&&items.some(x=>!/\.(m3u8|mpd)(?:[?#]|$)/i.test(x.url)))throw new Error('N_m3u8DL-RE needs direct .m3u8 or .mpd manifest URLs. Deselect page URLs or use yt-dlp.');jobs=items.map(x=>({...x,...opts}));}catch(e){feedback(e.message);return;}
   busy=true;$('download').disabled=true;$('download').textContent='Adding to your local queue…';try{const r=await native({op:'enqueue',jobs});renderJobs(r.jobs);feedback('Added to your local queue. Duplicate jobs are not started twice.');$('urls').value='';}catch(e){feedback(e.message);}finally{busy=false;$('download').disabled=false;$('download').textContent='Download selected';}
 }
+async function downloadDirect(){
+  feedback('');const button=$('direct-download');let urls;
+  try{const pasted=parseInput($('urls').value);urls=[...new Set(pasted.length?pasted:candidates.filter(x=>selected.has(x.url)).map(x=>x.url))];
+    if(!urls.length)throw new Error('Select or paste a direct file link first.');
+    if(urls.length>50)throw new Error('Choose at most 50 files at a time.');
+    if(urls.some(url=>!/\.(mp4|webm|mp3|m4a|wav)$/i.test(new URL(url).pathname)))throw new Error('Browser download needs direct MP4, WebM, MP3, M4A or WAV links. Deselect pages or use the companion.');
+  }catch(e){feedback(e.message);return;}
+  button.disabled=true;let started=0;
+  try{for(const url of urls){await api.downloads.download({url});started++;}feedback(`${started} file(s) sent to browser downloads. Check your browser for progress.`);$('urls').value='';}
+  catch(e){feedback(`${started} file(s) started. Browser download failed: ${e.message}`);}finally{button.disabled=false;}
+}
+$('direct-download').addEventListener('click',downloadDirect);
+$('theme').addEventListener('click',async()=>{const theme=document.documentElement.dataset.theme==='dark'?'light':'dark';applyTheme(theme);await api.storage.local.set({theme});});
 $('refresh').addEventListener('click',()=>loadTabs());$('scan').addEventListener('click',scan);$('observe').addEventListener('click',()=>observe().catch(e=>feedback(e.message)));$('select-all').addEventListener('change',e=>{selected=e.target.checked?new Set(candidates.map(x=>x.url)):new Set();renderCandidates();});$('clear').addEventListener('click',()=>{selected.clear();renderCandidates();});$('download').addEventListener('click',enqueue);$('reconnect').addEventListener('click',refreshStatus);$('expand').addEventListener('click',()=>api.tabs.create({url:api.runtime.getURL('popup.html')}));$('doctor').addEventListener('click',async()=>{try{$('doctor-result').textContent='Checking…';const r=await native({op:'doctor'});$('doctor-result').textContent=JSON.stringify(r.doctor||r,null,2);}catch(e){$('doctor-result').textContent=e.message;}});
 for(const id of settingsIds)$(id).addEventListener('change',async()=>{hints();const saved={};for(const key of settingsIds)saved[key]=$(key).value;await api.storage.local.set({settings:saved});});
-(async()=>{const {settings:saved={}}=await api.storage.local.get('settings');for(const id of settingsIds)if(saved[id]!==undefined)$(id).value=saved[id];hints();await loadTabs(true);await refreshStatus();setInterval(refreshStatus,2000);})();
+(async()=>{const {theme='light'}=await api.storage.local.get('theme');applyTheme(theme);const {settings:saved={}}=await api.storage.local.get('settings');for(const id of settingsIds)if(saved[id]!==undefined)$(id).value=saved[id];hints();await loadTabs(true);await refreshStatus();setInterval(refreshStatus,2000);})();

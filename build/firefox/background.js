@@ -34,7 +34,7 @@ api.runtime.onMessage.addListener((message, sender, respond) => {
   if (sender.id !== api.runtime.id || !sender.url?.startsWith(api.runtime.getURL('')) || message?.type !== 'native') return false;
   const allowed = ['status','enqueue','pause','resume','cancel','retry','doctor'];
   if (!allowed.includes(message.request?.op)) { respond({ok:false,error:'Unknown command'}); return false; }
-  api.runtime.sendNativeMessage(HOST, message.request).then(respond).catch(() => respond({ok:false,error:'The local companion is not connected. Install it using the Mac setup guide, then select Reconnect.',missingHost:true}));
+  api.runtime.sendNativeMessage(HOST, message.request).then(respond).catch(() => respond({ok:false,error:'Local companion not connected. Direct file downloads still work in your browser. On Mac, see the setup guide to enable the queue and conversion.',missingHost:true}));
   return true;
 });
 // Tab IDs are not stable across browser launches; do not retain old signed URLs.
