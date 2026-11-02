@@ -18,6 +18,17 @@ class Worker(unittest.TestCase):
    def cancelled(*args,**kwargs):core.update(db,r['id'],status='cancelled');return 0
    with patch.object(worker,'run',side_effect=cancelled):worker.process(db,r,1)
    self.assertEqual(db.execute('SELECT status FROM jobs').fetchone()[0],'cancelled');db.close()
+ def test_unsupported_page_fails_without_retry_or_leaking_output(self):
+  import os
+  with tempfile.TemporaryDirectory() as d:
+   core.STATE=Path(d);worker.STATE=core.STATE;db=core.setup()
+   core.handle({'op':'enqueue','jobs':[{'url':'https://example.com/page','captions':False}]},False);r=db.execute('SELECT * FROM jobs').fetchone()
+   fd=os.open(Path(d)/'lock',os.O_CREAT|os.O_RDWR,0o600)
+   try:
+    with patch.object(worker,'engine_argv',return_value=[sys.executable,'-c',"import sys; print('ERROR: Unsupported URL: https://example.com/?token=secret',file=sys.stderr); sys.exit(1)"]):worker.process(db,r,fd)
+    job=db.execute('SELECT status,message,attempts FROM jobs').fetchone()
+    self.assertEqual(job['status'],'failed');self.assertEqual(job['attempts'],1);self.assertIn('not supported',job['message']);self.assertNotIn('secret',job['message'])
+   finally:os.close(fd);db.close()
  def test_status_is_native_message_bounded(self):
   with tempfile.TemporaryDirectory() as d:
    core.STATE=Path(d)

@@ -15,7 +15,7 @@ def stop(*_):
 
 signal.signal(signal.SIGTERM,stop);signal.signal(signal.SIGINT,stop)
 
-def run(db,id,argv,lockfd,phase='running'):
+def run(db,id,argv,lockfd,phase='running',diagnostic=None):
     global CHILD
     # Engine inherits flock: even SIGKILL of worker cannot permit concurrent writer.
     CHILD=subprocess.Popen(argv,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True,pass_fds=(lockfd,))
@@ -36,6 +36,10 @@ def run(db,id,argv,lockfd,phase='running'):
             matches=re.findall(rb'TVD:\s*([0-9.]+)%',buf)
             if matches and time.time()-last>.5:
                 update(db,id,progress=min(99,float(matches[-1])),message='Downloading');last=time.time();buf=b''
+    # Drain output written immediately before exit; retain only a fixed category.
+    try:buf=(buf+(CHILD.stdout.read() or b''))[-16384:]
+    except BlockingIOError:pass
+    if diagnostic is not None and b'unsupported url' in buf.lower():diagnostic.append('unsupported_url')
     return CHILD.returncode
 
 def active(db,id,phase):
@@ -78,9 +82,13 @@ def process(db,r,lockfd):
         p=subprocess.run(['N_m3u8DL-RE','--help'],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=15);help_text=p.stdout.decode(errors='replace')
         update(db,id,message='Advanced engine: retries preserve files, but restart may re-download segments')
     argv=engine_argv(d,work,help_text)
-    code=run(db,id,argv,lockfd)
+    diagnostic=[]
+    code=run(db,id,argv,lockfd,diagnostic=diagnostic)
     if code is None or not active(db,id,'running'):return
     if code:
+        if 'unsupported_url' in diagnostic:
+            transition(db,id,'running',status='failed',message='This page is not supported by the downloader. Try Find media for a direct file; some sites do not expose downloadable media. Partial files retained.')
+            return
         if r['attempts']<2:
             transition(db,id,'running',status='retrying',next_at=time.time()+min(60,2**(r['attempts']+1)),message='Network/engine failure; bounded retry pending. Partials retained. Expired URLs may need refreshing.');return
         raise RuntimeError('Engine failed after 3 attempts. Original/partial files retained. Check access, URL expiry and dependency versions; no DRM bypass is supported.')
