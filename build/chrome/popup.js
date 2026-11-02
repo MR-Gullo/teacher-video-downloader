@@ -2,7 +2,7 @@
 const api = globalThis.browser || chrome;
 const $ = id => document.getElementById(id);
 const privateMode=Boolean(api.extension?.inIncognitoContext);
-let candidates = [], selected = new Set(), current = null, busy = false, polling = false, connected = false;
+let candidates = [], selected = new Set(), current = null, busy = false, polling = false, connected = false, watchedOrigins = [];
 function applyTheme(theme) { document.documentElement.dataset.theme=theme; $('theme').textContent=theme==='dark'?'Light theme':'Dark theme'; $('theme').setAttribute('aria-label',`Switch to ${theme==='dark'?'light':'dark'} theme`); }
 const settingsIds = ['quality','audio','captions','course','copy','engine'];
 function feedback(message) { $('feedback').textContent = message; $('feedback').hidden = !message; }
@@ -35,7 +35,7 @@ async function loadTabs(initial=false) {
     selected=new Set([...selected].filter(u=>candidates.some(c=>c.url===u)));
     $('current-title').textContent=current?.title || 'No active web page';$('current-domain').textContent=current?shortURL(current.url):'Open a video page, or paste a link.';
     $('scan').disabled=!current;$('observe').disabled=!current;
-    const {watched=[]}=await api.storage.local.get('watched');
+    const {watched=[]}=await api.storage.local.get('watched');watchedOrigins=watched;
     $('observe').textContent=current&&watched.includes(new URL(current.url).origin)?'Disable stream detection for this site':'Enable stream detection for this site';
     renderCandidates();
   }catch(e){feedback('Could not read tabs. '+e.message);}
@@ -43,14 +43,14 @@ async function loadTabs(initial=false) {
 async function scan() {
   if(!current)return; $('scan').disabled=true;feedback('');
   try{
-    const result=await api.scripting.executeScript({target:{tabId:current.id},func:()=>[...document.querySelectorAll('video,audio,video source,audio source,a[href]')].map(e=>e.currentSrc||e.src||e.href).filter(u=>/^https?:/.test(u)&&(/\.(m3u8|mpd|mp4|webm|mp3|m4a)(?:[?#]|$)/i.test(u)||[...document.querySelectorAll('video,audio')].some(v=>v.currentSrc===u))).slice(0,40)});
+    const result=await api.scripting.executeScript({target:{tabId:current.id},func:()=>{const media=[...document.querySelectorAll('video,audio')],links=[...document.querySelectorAll('video,audio,video source,audio source,a[href]')].map(e=>e.currentSrc||e.src||e.href).filter(u=>/^https?:/.test(u)&&(/\.(m3u8|mpd|mp4|webm|mp3|m4a)(?:[?#]|$)/i.test(u)||media.some(v=>v.currentSrc===u)));const manifests=performance.getEntriesByType('resource').map(e=>e.name).filter(u=>/^https?:/.test(u)&&/\.(m3u8|mpd)(?:[?#]|$)/i.test(u));return [...new Set([...links,...manifests])].slice(0,40);}});
     const urls=[...new Set(result.flatMap(x=>x.result||[]))];urls.forEach((url,i)=>addCandidate({url,title:`${current.title || 'Video'} · media ${i+1}`,pageUrl:current.url,kind:'Page media'}));if(urls.length){selected.delete(current.url);for(const url of urls)if(/\.(mp4|webm|mp3|m4a|wav)$/i.test(new URL(url).pathname))selected.add(url);}renderCandidates();
-    feedback(urls.length?`Found ${urls.length} media link(s). Direct files are selected; check your selection before downloading.`:'No direct media links found. Try the page URL with yt-dlp, or enable stream detection and play the video. Blob and protected media cannot be downloaded directly.');
+    feedback(urls.length?`Found ${urls.length} media link(s). Select a link to download; direct files are preselected.`:'No direct media links found. Try the page URL with yt-dlp, or enable stream detection and play the video. Blob and protected media cannot be downloaded directly.');
   }catch{feedback('This tab does not allow scanning yet. Open the extension from the video tab, or enable site access and try again.');}
   finally{$('scan').disabled=false;}
 }
 async function observe() {
-  if(!current)return;const origin=new URL(current.url).origin;const {watched=[]}=await api.storage.local.get('watched');
+  if(!current)return;const origin=new URL(current.url).origin;const watched=watchedOrigins;
   if(watched.includes(origin)){const {captured={}}=await api.storage.local.get('captured');for(const key of Object.keys(captured)){captured[key]=captured[key].filter(item=>{try{return new URL(item.pageUrl).origin!==origin;}catch{return false;}});if(!captured[key].length)delete captured[key];}await api.storage.local.set({watched:watched.filter(x=>x!==origin),captured});await api.permissions.remove({origins:[origin+'/*']});}
   else {const granted=await api.permissions.request({origins:[origin+'/*']});if(!granted){feedback('Site access was not granted. You can still paste a media URL.');return;}await api.storage.local.set({watched:[...watched,origin].slice(-40)});feedback('Stream detection enabled for this site. Play the video, then Refresh tabs. Cross-origin CDN requests may not be visible without separate permission.');}
   await loadTabs();
