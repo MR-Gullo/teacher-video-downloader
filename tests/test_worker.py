@@ -29,6 +29,69 @@ class Worker(unittest.TestCase):
     job=db.execute('SELECT status,message,attempts FROM jobs').fetchone()
     self.assertEqual(job['status'],'failed');self.assertEqual(job['attempts'],1);self.assertIn('not supported',job['message']);self.assertNotIn('secret',job['message'])
    finally:os.close(fd);db.close()
+ def test_auto_engine_falls_back_only_for_unavailable_engine(self):
+  with patch.object(worker.Path,'is_file',return_value=False),patch.object(worker.shutil,'which',return_value=None):
+   self.assertEqual(worker.choose_engine({'engine':'auto','verifiedManifest':True}),'yt-dlp')
+  with patch.object(worker.shutil,'which',side_effect=AssertionError('must not inspect advanced engine')):
+   self.assertEqual(worker.choose_engine({'engine':'auto','verifiedManifest':False}),'yt-dlp')
+ def test_unsupported_option_falls_back_in_same_job_but_auth_does_not(self):
+  from types import SimpleNamespace
+  for first in ('unsupported_option','access_denied'):
+   with self.subTest(first=first),tempfile.TemporaryDirectory() as d:
+    root=Path(d);core.STATE=root;worker.STATE=root;worker.OUTPUT=root/'output';db=core.setup()
+    core.handle({'op':'enqueue','jobs':[{'url':'https://example.com/video','verifiedManifest':True,'quality':'720','captions':False}]},False);r=db.execute('SELECT * FROM jobs').fetchone();engines=[]
+    def argv(data,*args):engines.append(data['engine']);return [data['engine']]
+    def fake_run(db,id,argv,lockfd,**kwargs):
+     if argv[0]=='n':kwargs['diagnostic'].append(first);return 1
+     (root/'jobs'/id/'source.mp4').write_bytes(b'fixture');return 0
+    with patch.object(worker,'choose_engine',return_value='n'),patch.object(worker,'n_preflight',return_value=True),patch.object(worker.subprocess,'run',return_value=SimpleNamespace(returncode=0,stdout=b'')),patch.object(worker,'engine_argv',side_effect=argv),patch.object(worker,'run',side_effect=fake_run),patch.object(worker,'probe',return_value={'streams':[{'codec_type':'video','height':720},{'codec_type':'audio'}]}):worker.process(db,r,1)
+    row=db.execute('SELECT status,attempts FROM jobs').fetchone()
+    self.assertEqual(row['attempts'],1)
+    if first=='unsupported_option':self.assertEqual(engines,['n','yt-dlp']);self.assertEqual(row['status'],'complete')
+    else:self.assertEqual(engines,['n']);self.assertEqual(row['status'],'failed')
+    db.close()
+ def test_n_preflight_timeout_falls_back_and_protection_stops(self):
+  from types import SimpleNamespace
+  d={'engine':'n'}
+  with patch.object(worker,'engine_argv',return_value=['N','--http-request-timeout','30']):
+   with patch.object(worker.subprocess,'run',side_effect=worker.subprocess.TimeoutExpired('N',12)):
+    self.assertFalse(worker.n_preflight(d,Path('/tmp'),None))
+   for message in (b'HTTP 403 Forbidden',b'Widevine DRM protected',b'not available in your country'):
+    with patch.object(worker.subprocess,'run',return_value=SimpleNamespace(returncode=1,stdout=message)):
+     with self.assertRaisesRegex(RuntimeError,'protected'):worker.n_preflight(d,Path('/tmp'),None)
+   with patch.object(worker.subprocess,'run',return_value=SimpleNamespace(returncode=1,stdout=b'Loading URL: https://example.com/asset401403drm?token=401403')):
+    self.assertFalse(worker.n_preflight(d,Path('/tmp'),None))
+   with patch.object(worker.subprocess,'run',return_value=SimpleNamespace(returncode=1,stdout=b'client unavailable')):
+    self.assertFalse(worker.n_preflight(d,Path('/tmp'),None))
+ def test_auto_preflight_failure_uses_ytdlp_in_same_job(self):
+  from types import SimpleNamespace
+  with tempfile.TemporaryDirectory() as d:
+   root=Path(d);core.STATE=root;worker.STATE=root;worker.OUTPUT=root/'output';db=core.setup()
+   core.handle({'op':'enqueue','jobs':[{'url':'https://example.com/video','verifiedManifest':True,'captions':False}]},False);r=db.execute('SELECT * FROM jobs').fetchone();engines=[]
+   def argv(data,*args):engines.append(data['engine']);return [data['engine']]
+   def done(db,id,argv,lockfd,**kwargs):
+    (root/'jobs'/id/'source.mp4').write_bytes(b'fixture');return 0
+   with patch.object(worker,'choose_engine',return_value='n'),patch.object(worker,'n_preflight',return_value=False),patch.object(worker.subprocess,'run',return_value=SimpleNamespace(returncode=0,stdout=b'')),patch.object(worker,'engine_argv',side_effect=argv),patch.object(worker,'run',side_effect=done),patch.object(worker,'probe',return_value={'streams':[{'codec_type':'video','height':720},{'codec_type':'audio'}]}):worker.process(db,r,1)
+   self.assertEqual(engines,['yt-dlp']);self.assertEqual(db.execute('SELECT status,attempts FROM jobs').fetchone()[:],('complete',1));db.close()
+ def test_failed_media_sample_never_publishes(self):
+  with tempfile.TemporaryDirectory() as d:
+   root=Path(d);core.STATE=root;worker.STATE=root;worker.OUTPUT=root/'output';db=core.setup()
+   core.handle({'op':'enqueue','jobs':[{'url':'https://example.com/video','captions':False}]},False);r=db.execute('SELECT * FROM jobs').fetchone()
+   def execute(db,id,argv,lockfd,**kwargs):
+    if argv[0]=='yt-dlp':(root/'jobs'/id/'source.mp4').write_bytes(b'fixture');return 0
+    return 1
+   with patch.object(worker,'run',side_effect=execute),patch.object(worker,'probe',return_value={'streams':[{'codec_type':'video','height':720},{'codec_type':'audio'}]}):
+    with self.assertRaisesRegex(RuntimeError,'sample decoding'):worker.process(db,r,1)
+   self.assertEqual(db.execute('SELECT files FROM jobs').fetchone()[0],'[]');self.assertFalse((root/'output').exists());db.close()
+ def test_quality_limit_rejects_oversize_output(self):
+  with tempfile.TemporaryDirectory() as d:
+   core.STATE=Path(d);worker.STATE=core.STATE;db=core.setup()
+   core.handle({'op':'enqueue','jobs':[{'url':'https://example.com/video','quality':'720','captions':False}]},False);r=db.execute('SELECT * FROM jobs').fetchone()
+   def pretend_download(*args,**kwargs):
+    work=Path(d)/'jobs'/r['id'];(work/'source.mp4').write_bytes(b'fixture');return 0
+   with patch.object(worker,'run',side_effect=pretend_download),patch.object(worker,'probe',return_value={'streams':[{'codec_type':'video','height':1080},{'codec_type':'audio'}]}):
+    with self.assertRaisesRegex(RuntimeError,'quality limit'):worker.process(db,r,1)
+   self.assertEqual(db.execute('SELECT files FROM jobs').fetchone()[0],'[]');db.close()
  def test_status_is_native_message_bounded(self):
   with tempfile.TemporaryDirectory() as d:
    core.STATE=Path(d)

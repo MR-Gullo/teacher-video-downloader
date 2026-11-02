@@ -15,6 +15,16 @@ def stop(*_):
 
 signal.signal(signal.SIGTERM,stop);signal.signal(signal.SIGINT,stop)
 
+def output_categories(output):
+    # URL tokens and asset identifiers are not status codes or error messages.
+    text=re.sub(rb'https?://[^\s"<>]+',b'[url]',output.lower())
+    categories=[]
+    if b'unsupported url' in text:categories.append('unsupported_url')
+    if re.search(rb'(?:http(?:/\d(?:\.\d)?)?(?:\s+error)?|status(?:\s+code)?|response(?:\s+code)?)\s*[:=]?\s*(?:401|403)\b',text) or any(x in text for x in (b'unauthorized',b'forbidden')):categories.append('access_denied')
+    if any(x in text for x in (b'widevine',b'playready',b'drm protected',b'drm protection',b'encrypted content',b'geoblock',b'geo-block',b'not available in your country',b'451 unavailable')):categories.append('protected')
+    if any(x in text for x in (b'unrecognized option',b'unknown option',b'unrecognized command or argument')):categories.append('unsupported_option')
+    return categories
+
 def run(db,id,argv,lockfd,phase='running',diagnostic=None):
     global CHILD
     # Engine inherits flock: even SIGKILL of worker cannot permit concurrent writer.
@@ -39,7 +49,9 @@ def run(db,id,argv,lockfd,phase='running',diagnostic=None):
     # Drain output written immediately before exit; retain only a fixed category.
     try:buf=(buf+(CHILD.stdout.read() or b''))[-16384:]
     except BlockingIOError:pass
-    if diagnostic is not None and b'unsupported url' in buf.lower():diagnostic.append('unsupported_url')
+    if diagnostic is not None:
+        lower=re.sub(rb'https?://[^\s"<>]+',b'[url]',buf.lower())
+        diagnostic.extend(output_categories(lower))
     return CHILD.returncode
 
 def active(db,id,phase):
@@ -74,20 +86,77 @@ def publish(src,folder,prefix):
         finally:os.unlink(tmp)
     raise RuntimeError('Too many filename collisions')
 
+def choose_engine(d):
+    if d.get('engine')!='auto':return d['engine']
+    if not d.get('verifiedManifest'):return 'yt-dlp'
+    known=Path.home()/'Library/Application Support/Teacher Video Downloader/tools/N_m3u8DL-RE-0.6.0-beta'
+    expected='c332b463aa42975c25217d56a51a2ea32fddfd86b4ae8338a8f7416b0bc196e7'
+    try:
+        if known.is_file() and os.access(known,os.X_OK) and hashlib.sha256(known.read_bytes()).hexdigest()==expected:
+            p=subprocess.run([str(known),'--help'],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=15)
+            text=p.stdout.decode(errors='replace')
+            if p.returncode==0 and all(x in text for x in ('--disable-update-check','--write-meta-json','-sv','-sa')):
+                d['_n_path']=str(known);d['_known_n']=True;return 'n'
+    except (OSError,subprocess.TimeoutExpired):pass
+    path=shutil.which('N_m3u8DL-RE')
+    if not path:return 'yt-dlp'
+    try:
+        p=subprocess.run([path,'--help'],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=15)
+        text=p.stdout.decode(errors='replace')
+        required=('--no-config','--disable-update-check','--write-meta-json','--vod-select-parts','-sv','-sa','-ds')
+        if p.returncode==0 and all(x in text for x in required):d['_n_path']=path;return 'n'
+    except (OSError,subprocess.TimeoutExpired):pass
+    return 'yt-dlp'
+
+def n_preflight(d,work,help_text):
+    # Parse only: no segments or output media. Bound a broken local runtime.
+    argv=engine_argv(d,work,help_text)
+    argv[argv.index('--http-request-timeout')+1]='8'
+    try:
+        p=subprocess.run(argv+['--skip-download','true'],stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=12)
+    except (OSError,subprocess.TimeoutExpired):return False
+    if any(x in output_categories(p.stdout) for x in ('access_denied','protected')):
+        raise RuntimeError('Access was denied or the media is protected. No alternate engine was tried.')
+    return p.returncode==0
+
 def process(db,r,lockfd):
     id=r['id'];d=json.loads(r['data']);work=STATE/'jobs'/id;work.mkdir(parents=True,exist_ok=True,mode=0o700)
     if not transition(db,id,r['status'],status='running',message='Starting locally',attempts=r['attempts']+1):return
+    automatic=d.get('engine')=='auto'
+    d['engine']=choose_engine(d)
     help_text=None
     if d['engine']=='n':
-        p=subprocess.run(['N_m3u8DL-RE','--help'],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=15);help_text=p.stdout.decode(errors='replace')
-        update(db,id,message='Advanced engine: retries preserve files, but restart may re-download segments')
-    argv=engine_argv(d,work,help_text)
+        try:
+            p=subprocess.run([d.get('_n_path','N_m3u8DL-RE'),'--help'],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=15)
+            if p.returncode:raise OSError('Engine unavailable')
+            help_text=p.stdout.decode(errors='replace')
+            if automatic and not n_preflight(d,work,help_text):
+                d['engine']='yt-dlp';update(db,id,message='Using the compatible local downloader');argv=engine_argv(d,work)
+            else:argv=engine_argv(d,work,help_text)
+        except RuntimeError as e:
+            if not automatic or str(e)!='N_m3u8DL-RE version lacks required privacy controls':raise
+            d['engine']='yt-dlp';argv=engine_argv(d,work)
+        except (OSError,subprocess.TimeoutExpired):
+            if not automatic:raise
+            d['engine']='yt-dlp';argv=engine_argv(d,work)
+        else:
+            if d['engine']=='n':update(db,id,message='Advanced engine: retries preserve files, but restart may re-download segments')
+    else:argv=engine_argv(d,work)
     diagnostic=[]
-    code=run(db,id,argv,lockfd,diagnostic=diagnostic)
+    try:code=run(db,id,argv,lockfd,diagnostic=diagnostic)
+    except OSError:
+        if not automatic or d['engine']!='n':raise
+        d['engine']='yt-dlp';code=run(db,id,engine_argv(d,work),lockfd,diagnostic=diagnostic)
+    if code and automatic and d['engine']=='n' and 'unsupported_option' in diagnostic and not any(x in diagnostic for x in ('access_denied','protected')) and active(db,id,'running'):
+        d['engine']='yt-dlp';update(db,id,message='Trying the compatible local downloader')
+        diagnostic=[];code=run(db,id,engine_argv(d,work),lockfd,diagnostic=diagnostic)
     if code is None or not active(db,id,'running'):return
     if code:
+        if 'access_denied' in diagnostic or 'protected' in diagnostic:
+            transition(db,id,'running',status='failed',message='Access was denied or the media is protected. No alternate engine was tried; partial files retained.')
+            return
         if 'unsupported_url' in diagnostic:
-            transition(db,id,'running',status='failed',message='This page is not supported by the downloader. Try Find media for a direct file; some sites do not expose downloadable media. Partial files retained.')
+            transition(db,id,'running',status='failed',message='This page is not supported by the downloader. Try a direct video link; some sites do not expose downloadable media. Partial files retained.')
             return
         if r['attempts']<2:
             transition(db,id,'running',status='retrying',next_at=time.time()+min(60,2**(r['attempts']+1)),message='Network/engine failure; bounded retry pending. Partials retained. Expired URLs may need refreshing.');return
@@ -96,6 +165,23 @@ def process(db,r,lockfd):
     if not sources:raise RuntimeError('Engine reported success but no output media was found')
     source=max(sources,key=lambda p:p.stat().st_size);info=probe(source)
     if not info.get('streams'):raise RuntimeError('Empty media result')
+    if not any(x.get('codec_type')=='audio' for x in info['streams']):
+        raise RuntimeError('The downloaded media has no audio. Original retained in the local job folder.')
+    if not d['audio'] and d['quality']!='best':
+        video=[x for x in info['streams'] if x.get('codec_type')=='video']
+        cap=int(d['quality'])
+        if not video or any(not x.get('height') or x['height']>cap for x in video):
+            raise RuntimeError('Downloaded video does not meet the selected quality limit. Original retained in the local job folder.')
+    try:duration=float(info.get('format',{}).get('duration',0) or 0)
+    except (TypeError,ValueError):duration=0
+    points=sorted(set([0,max(0,duration/2-1),max(0,duration-3)])) if duration>6 else [0]
+    for point in points:
+        args=['ffmpeg','-nostdin','-v','error','-xerror','-ss',str(point),'-i',str(source),'-t','2']
+        if not d['audio']:args+=['-map','0:v:0']
+        args+=['-map','0:a:0','-f','null','-']
+        result=run(db,id,args,lockfd)
+        if result is None or not active(db,id,'running'):return
+        if result:raise RuntimeError('Downloaded media failed sample decoding. Original retained in the local job folder.')
     if not transition(db,id,'running',status='processing',progress=99,message='Validating original and preparing classroom copy'):return
     files=[];warning='';course=OUTPUT/d['course'] if d['course'] else OUTPUT
     # Publishing original first ensures captions/copy failures cannot destroy it.

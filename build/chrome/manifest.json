@@ -5,16 +5,10 @@
   "description": "A private, local download queue for classroom videos you have permission to save.",
   "permissions": [
     "activeTab",
-    "tabs",
     "storage",
     "scripting",
     "nativeMessaging",
-    "webRequest",
     "downloads"
-  ],
-  "optional_host_permissions": [
-    "http://*/*",
-    "https://*/*"
   ],
   "action": {
     "default_popup": "popup.html",

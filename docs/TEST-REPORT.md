@@ -1,6 +1,12 @@
 # Verification report — 2026-11-02
 
-The repaired 0.2.1 extension has been tested as a temporary Zen preview. A normal signed installation of the repaired version has not been verified.
+## Firefox / Zen 0.3.0 temporary preview
+
+- The redesigned 0.3.0 preview was loaded temporarily in Zen with a separate extension ID and companion host. Its reduced-permission build detected the current page, restored completed-job status after reopening, and showed the saved destination. Keyboard theme switching and persistence were checked. The signed 0.2.1 add-on remains installed but was disabled to avoid duplicate controls. Temporary extensions require reloading after browser restart.
+- On the user-authorized Knowledge Network film *This Borrowed Land*, the selected film job completed through yt-dlp after the optional N engine did not complete its metadata check. The job was resumed during fallback repair; this was not an uninterrupted one-click end-to-end test of the final build. The saved MP4 contains 1280×720 H.264 video, AAC audio and a subtitle track, with duration 1,731.636 seconds. Two-second video and audio samples decoded near the start, middle and end. A successful N media download remains unverified.
+- Twenty-six Python tests and the popup and native-consent boundary checks passed. The legacy Playwright browser scripts were not run: Playwright was unavailable and their fixtures target the previous interface. Chrome release work remained paused. No new version was signed or published.
+
+The following 0.2.1 section records an earlier point in time; Mozilla later approved 0.2.1 and the signed add-on is installed as described above.
 
 ## Firefox / Zen 0.2.1 and Knowledge Network check
 
@@ -8,7 +14,7 @@ The repaired 0.2.1 extension has been tested as a temporary Zen preview. A norma
 - Version 0.2.1 was prepared with manifest discovery and a Firefox site-permission fix. The temporary Zen preview found six HLS manifests on a playing Knowledge Network page. Selecting one and using the separately installed Mac companion completed the full video on the first attempt. A page URL submitted directly to the downloader had previously failed as unsupported.
 - The selected playlist reported 597 segments, a duration of 2,385.3 seconds, and no encryption method in that playlist. The original and classroom MP4 each report 2,385.3 seconds of 1080p H.264 video with AAC audio. Video and audio decoded successfully in two-second samples near the start, middle and end. The companion reported that it found no embedded English captions. These checks do not guarantee support for other videos or sites.
 - Sixteen Python companion tests passed, including a regression for unsupported URLs. DOM-shim checks passed for manifest discovery, hiding media paths in labels, and requesting site permission during the initiating action. In the temporary Zen preview, Firefox displayed and accepted the requested site permission. The version 0.2.1 source archive reproduced the upload ZIP byte for byte.
-- Mozilla displayed an IP restriction before the 0.2.1 upload step. Version 0.2.1 has not been uploaded or signed. Its normal installation, persistence after browser restart, and signed-build QA remain unverified. No temporary install or queue cleanup has been performed.
+- At the time of this earlier check, Mozilla displayed an IP restriction before the 0.2.1 upload step, so that submission and signing had not yet occurred. Persistence after a full browser restart and complete signed-build QA remain unverified. No temporary install or queue cleanup has been performed.
 
 ## Current Mac checks
 

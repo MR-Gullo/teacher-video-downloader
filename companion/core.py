@@ -41,11 +41,11 @@ def public_url(s):
 def normalize(j):
     if not isinstance(j,dict): raise ValueError('Invalid job')
     u=valid_url(j.get('url',''))
-    engine=j.get('engine','yt-dlp'); quality=str(j.get('quality','1080')); copy=j.get('copy','classroom')
-    if engine not in ('yt-dlp','n') or quality not in ('1080','720','best') or copy not in ('none','classroom','av1'): raise ValueError('Invalid settings')
+    engine=j.get('engine','auto'); quality=str(j.get('quality','720')); copy=j.get('copy','none')
+    if engine not in ('yt-dlp','n','auto') or quality not in ('1080','720','best') or copy not in ('none','classroom','av1'): raise ValueError('Invalid settings')
     if j.get('cookies') or j.get('headers'): raise ValueError('Authentication transfer is not enabled in this build')
     page=valid_url(j['pageUrl']) if j.get('pageUrl') else u
-    return dict(url=u,pageUrl=public_url(page),title=safe_name(j.get('title') or urlsplit(u).hostname),engine=engine,quality=quality,copy=copy,audio=bool(j.get('audio',False)),captions=bool(j.get('captions',True)),course=safe_name(j['course']) if j.get('course') else '')
+    return dict(url=u,pageUrl=public_url(page),title=safe_name(j.get('title') or urlsplit(u).hostname),engine=engine,quality=quality,copy=copy,audio=bool(j.get('audio',False)),captions=bool(j.get('captions',True)),course=safe_name(j['course']) if j.get('course') else '',verifiedManifest=bool(j.get('verifiedManifest',False)))
 
 def status(db):
     out=[]
@@ -76,7 +76,16 @@ def ensure_worker():
 
 def handle(req, start=True):
     if not isinstance(req,dict): raise ValueError('Invalid request')
-    db=setup();op=req.get('op');result={'ok':True}
+    op=req.get('op')
+    if op=='resolve':
+        from resolve import resolve
+        candidates=req.get('candidates',[])
+        if not isinstance(candidates,list) or len(candidates)>24:raise ValueError('Too many media candidates')
+        candidates=[valid_url(x) for x in candidates]
+        duration=req.get('duration');quality=req.get('quality','720');limit=1080 if quality=='1080' else 720
+        found=resolve(candidates,duration,limit)
+        return {'ok':True,'url':found}
+    db=setup();result={'ok':True}
     try:
         if op=='enqueue':
             jobs=req.get('jobs',[])
@@ -84,10 +93,12 @@ def handle(req, start=True):
             jobs=[normalize(j) for j in jobs]
             db.execute('BEGIN IMMEDIATE')
             if db.execute('SELECT count(*) FROM jobs').fetchone()[0]+len(jobs)>MAX_JOBS: raise ValueError('Queue history limit reached (500); archive the local queue before adding more')
+            job_ids=[]
             for d in jobs:
                 fingerprint=hashlib.sha256(json.dumps({k:v for k,v in d.items() if k not in ('title','pageUrl')},sort_keys=True).encode()).hexdigest()
                 db.execute('INSERT OR IGNORE INTO jobs(id,fingerprint,data,status,created) VALUES(?,?,?,?,?)',(uuid.uuid4().hex,fingerprint,json.dumps(d),'queued',time.time()))
-            db.commit()
+                job_ids.append(db.execute('SELECT id FROM jobs WHERE fingerprint=?',(fingerprint,)).fetchone()[0])
+            db.commit();result['jobIds']=job_ids
         elif op in ('pause','resume','cancel','retry'):
             id=req.get('id');r=db.execute('SELECT status,data FROM jobs WHERE id=?',(id,)).fetchone()
             if not r: raise ValueError('Job not found')
@@ -103,7 +114,7 @@ def handle(req, start=True):
     return result
 
 def engine_argv(d,work, help_text=None):
-    if d['engine']=='yt-dlp':
+    if d['engine'] in ('yt-dlp','auto'):
         a=['yt-dlp','--ignore-config','--no-plugin-dirs','--no-remote-components','--no-playlist','--no-overwrites','--continue','--part','--retries','8','--fragment-retries','8','--retry-sleep','http:exp=1:30','--retry-sleep','fragment:exp=1:30','--abort-on-unavailable-fragments','--newline','--progress','--progress-template','download:TVD:%(progress._percent_str)s','--no-write-info-json','--no-cookies-from-browser','--no-cookies','--embed-chapters','--no-embed-info-json','-o',str(work/'source.%(ext)s')]
         if d['audio']:a+=['-f','bestaudio/best','-x','--audio-format','m4a']
         else:
@@ -111,9 +122,11 @@ def engine_argv(d,work, help_text=None):
             a+=['-f',f,'--merge-output-format','mkv']
         if d['captions'] and not d['audio']:a+=['--write-subs','--write-auto-subs','--sub-langs','en.*,en','--convert-subs','srt','--embed-subs']
         return a+['--',d['url']]
-    if help_text is not None and any(f not in help_text for f in ('--no-config','--disable-update-check','--write-meta-json')): raise RuntimeError('N_m3u8DL-RE version lacks required privacy controls; install a current official build')
-    a=['N_m3u8DL-RE',d['url'],'--no-config','--disable-update-check','--no-log','--write-meta-json','false','--use-system-proxy','false','--save-dir',str(work),'--tmp-dir',str(work/'segments'),'--save-name','source','--thread-count','4','--download-retry-count','8','--http-request-timeout','30','--del-after-done','false','--check-segments-count','true','--no-ansi-color','--auto-select','--vod-select-parts','false','-M','format=mkv:keep=true','-sa','best']
+    known=d.get('_known_n',False)
+    if help_text is not None and any(f not in help_text for f in (('--disable-update-check','--write-meta-json') if known else ('--no-config','--disable-update-check','--write-meta-json','--vod-select-parts'))): raise RuntimeError('N_m3u8DL-RE version lacks required privacy controls')
+    a=[d.get('_n_path','N_m3u8DL-RE'),d['url']]+([] if known else ['--no-config'])+['--disable-update-check','--no-log','--write-meta-json','false','--use-system-proxy','false','--save-dir',str(work),'--tmp-dir',str(work/'segments'),'--save-name','source','--thread-count','4','--download-retry-count','8','--http-request-timeout','30','--del-after-done','false','--check-segments-count','true','--no-ansi-color']+([] if known else ['--vod-select-parts','false'])+['-M','format=mkv:keep=true','-sa','for=best']
     if d['audio']:a+=['-dv','all']
+    elif d['quality']=='best':a+=['-sv','for=best']
     elif d['quality']!='best':
         # Explicit upper bound by height, not a fabricated generic continue flag.
         heights='144|240|360|480|540|576|720'+('|900|1080' if d['quality']=='1080' else '')

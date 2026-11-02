@@ -1,100 +1,89 @@
 'use strict';
-const api = globalThis.browser || chrome;
-const $ = id => document.getElementById(id);
+const api=globalThis.browser||chrome;
+const $=id=>document.getElementById(id);
 const privateMode=Boolean(api.extension?.inIncognitoContext);
-let candidates = [], selected = new Set(), current = null, busy = false, polling = false, connected = false, watchedOrigins = [];
-function applyTheme(theme) { document.documentElement.dataset.theme=theme; $('theme').textContent=theme==='dark'?'Light theme':'Dark theme'; $('theme').setAttribute('aria-label',`Switch to ${theme==='dark'?'light':'dark'} theme`); }
-const settingsIds = ['quality','audio','captions','course','copy','engine'];
-function feedback(message) { $('feedback').textContent = message; $('feedback').hidden = !message; }
-function httpURL(raw) { const url = new URL(raw); if (!['http:','https:'].includes(url.protocol) || url.username || url.password) throw new Error('Use an HTTP or HTTPS link without embedded credentials.'); return url.href; }
-function parseInput(raw) { return [...new Set(raw.split(/(?:\s+|,\s*(?=https?:\/\/|[\w-]{11}(?:[\s,]|$)))/).filter(Boolean).map(s => httpURL(/^[\w-]{11}$/.test(s) ? `https://www.youtube.com/watch?v=${s}` : s)))]; }
-function shortURL(url) { try { const u = new URL(url); return u.hostname + (u.pathname === '/' ? '' : u.pathname); } catch { return 'Unavailable page'; } }
-function mediaLabel(url) { try { const u=new URL(url),match=u.pathname.match(/\.(m3u8|mpd|mp4|webm|mp3|m4a|wav)$/i),ext=match?.[1].toLowerCase(),type=ext==='m3u8'?'HLS':ext==='mpd'?'DASH':ext?.toUpperCase()||'media';return `${u.hostname} · ${type}`; } catch { return 'Media link'; } }
-function addCandidate(item) { try { item.url = httpURL(item.url); } catch { return; } if (!candidates.some(x => x.url === item.url)) candidates.push(item); }
-function renderCandidates() {
-  $('candidates').replaceChildren();
-  if (!candidates.length) { const p=document.createElement('p');p.className='empty';p.textContent='No web tabs found. Paste a video link below.';$('candidates').append(p); }
-  candidates.forEach(item => {
-    const label=document.createElement('label');label.className='candidate';
-    const input=document.createElement('input');input.type='checkbox';input.checked=selected.has(item.url);input.setAttribute('aria-label',`Select ${item.title || shortURL(item.url)}`);
-    input.addEventListener('change',()=>{input.checked?selected.add(item.url):selected.delete(item.url);updateCount();});
-    const text=document.createElement('div'), title=document.createElement('strong'),sub=document.createElement('small');
-    title.textContent=item.title || shortURL(item.url);sub.textContent=`${item.kind || 'Web page'} · ${['Page media','Detected stream'].includes(item.kind)?mediaLabel(item.url):shortURL(item.url)}`;
-    text.append(title,sub);label.append(input,text);$('candidates').append(label);
-  }); updateCount();
+const firefox=Boolean(api.runtime.getManifest?.().browser_specific_settings?.gecko);
+const dataPermissions={data_collection:['browsingActivity','websiteContent']};
+const settingIds=['quality','audio','captions','copy','course'];
+let source=null,players=[],pageSnapshot=null,consent=!firefox,busy=false,polling=false,lastJobId=null,lastDownload=null,lastRenderedJobs='';
+function setStatus(text){$('status').textContent=text||'';}
+function validURL(value){const u=new URL(value);if(!['http:','https:'].includes(u.protocol)||u.username||u.password)throw new Error('Enter an HTTP or HTTPS link without credentials.');return u.href;}
+function safeSite(value){try{return new URL(value).hostname}catch{return ''}}
+function durationText(n){if(!Number.isFinite(n)||n<=0)return '';let s=Math.round(n);return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;}
+function setTheme(value){document.documentElement.dataset.theme=value;$('theme').textContent=value==='dark'?'☀':'☾';$('theme').setAttribute('aria-label',`Switch to ${value==='dark'?'light':'dark'} theme`);}
+function syncConsent(){const need=firefox&&!consent;$('consent-note').hidden=!need;$('download').textContent=need?'Allow and download':'Download video';}
+function selectedPlayer(){if(players.length===1)return players[0];const v=$('player-choice').value;return v===''?null:players[Number(v)]||null;}
+function showSource(){
+  const pasted=$('paste-area').hidden?'':$('url').value.trim();
+  let url=pasted||source?.url||'';const p=pasted?null:selectedPlayer();
+  $('current-title').textContent=pasted?'Video link':source?.title||'Open a video page';$('current-domain').textContent=safeSite(url);$('current-duration').textContent=p?durationText(p.duration):'';
+  $('download').disabled=busy||!url||(!pasted&&players.length>1&&!p);
+  const direct=Boolean(pasted&&/\.(mp4|webm|mp3|m4a|wav)(?:[?#]|$)/i.test(pasted));$('direct-download').hidden=!direct;$('direct-note').hidden=!direct;
 }
-function updateCount() { const n=candidates.filter(x=>selected.has(x.url)).length;$('selected-count').textContent=`${n} selected`;$('select-all').checked=n>0&&n===candidates.length;$('select-all').indeterminate=n>0&&n<candidates.length; }
-async function loadTabs(initial=false) {
-  try {
-    const tabs=(await api.tabs.query({currentWindow:true})).filter(t=>!t.incognito);
-    const active=tabs.find(t=>t.active && /^https?:/.test(t.url || ''));
-    current=active || null;
-    candidates=[];tabs.filter(t=>/^https?:/.test(t.url || '')).forEach(t=>addCandidate({url:t.url,title:t.title,pageUrl:t.url,kind:t.id===current?.id?'Current page':'Open tab'}));
-    const {captured={}}=await api.storage.local.get('captured');
-    for(const t of tabs) for(const item of captured[String(t.id)]||[]) addCandidate(item);
-    if(initial&&current) selected.add(current.url);
-    selected=new Set([...selected].filter(u=>candidates.some(c=>c.url===u)));
-    $('current-title').textContent=current?.title || 'No active web page';$('current-domain').textContent=current?shortURL(current.url):'Open a video page, or paste a link.';
-    $('scan').disabled=!current;$('observe').disabled=!current;
-    const {watched=[]}=await api.storage.local.get('watched');watchedOrigins=watched;
-    $('observe').textContent=current&&watched.includes(new URL(current.url).origin)?'Disable stream detection for this site':'Enable stream detection for this site';
-    renderCandidates();
-  }catch(e){feedback('Could not read tabs. '+e.message);}
+function inspectPage(){
+  const nodes=[...document.querySelectorAll('video')];
+  const videos=nodes.map((v,i)=>({index:i,duration:Number.isFinite(v.duration)?v.duration:0,playing:!v.paused&&!v.ended,src:v.currentSrc||v.src||'',label:v.getAttribute('aria-label')||v.getAttribute('title')||`Video ${i+1}`}));
+  const resources=performance.getEntriesByType('resource').map(x=>x.name).filter(u=>/^https?:/i.test(u)&&/\.(m3u8|mpd)(?:[?#]|$)/i.test(u)).slice(-24);
+  return {url:location.href,documentStamp:performance.timeOrigin,videos,resources};
 }
-async function scan() {
-  if(!current)return; $('scan').disabled=true;feedback('');
+async function scanCurrent(){
+  if(privateMode)return;const tabs=await api.tabs.query({active:true,currentWindow:true});const tab=tabs[0];
+  if(!tab||tab.incognito||!/^https?:/i.test(tab.url||'')){source=null;players=[];showSource();return;}
+  source={id:tab.id,url:tab.url,title:tab.title||'Current video'};players=[];pageSnapshot=null;
   try{
-    const result=await api.scripting.executeScript({target:{tabId:current.id},func:()=>{const media=[...document.querySelectorAll('video,audio')],links=[...document.querySelectorAll('video,audio,video source,audio source,a[href]')].map(e=>e.currentSrc||e.src||e.href).filter(u=>/^https?:/.test(u)&&(/\.(m3u8|mpd|mp4|webm|mp3|m4a)(?:[?#]|$)/i.test(u)||media.some(v=>v.currentSrc===u)));const manifests=performance.getEntriesByType('resource').map(e=>e.name).filter(u=>/^https?:/.test(u)&&/\.(m3u8|mpd)(?:[?#]|$)/i.test(u));return [...new Set([...links,...manifests])].slice(0,40);}});
-    const urls=[...new Set(result.flatMap(x=>x.result||[]))];urls.forEach((url,i)=>addCandidate({url,title:`${current.title || 'Video'} · media ${i+1}`,pageUrl:current.url,kind:'Page media'}));if(urls.length){selected.delete(current.url);for(const url of urls)if(/\.(mp4|webm|mp3|m4a|wav)$/i.test(new URL(url).pathname))selected.add(url);}renderCandidates();
-    feedback(urls.length?`Found ${urls.length} media link(s). Select a link to download; direct files are preselected.`:'No direct media links found. Try the page URL with yt-dlp, or enable stream detection and play the video. Blob and protected media cannot be downloaded directly.');
-  }catch{feedback('This tab does not allow scanning yet. Open the extension from the video tab, or enable site access and try again.');}
-  finally{$('scan').disabled=false;}
+    const result=await api.scripting.executeScript({target:{tabId:tab.id},func:inspectPage});const snap=result[0]?.result;
+    if(!snap||snap.url!==tab.url)throw new Error('The page changed. Reopen LessonShelf.');
+    pageSnapshot=snap;const playing=snap.videos.filter(v=>v.playing);
+    players=playing.length===1?playing:snap.videos.length===1?snap.videos:[];
+    if(!players.length&&snap.videos.length>1){players=snap.videos;$('player-choice').replaceChildren();const placeholder=document.createElement('option');placeholder.value='';placeholder.textContent='Choose a video';placeholder.disabled=true;placeholder.selected=true;$('player-choice').append(placeholder);for(const [i,v] of players.entries()){const o=document.createElement('option');o.value=String(i);o.textContent=`${v.label}${v.duration?' · '+durationText(v.duration):''}`;$('player-choice').append(o)}$('player-choice-label').hidden=false;}
+    else $('player-choice-label').hidden=true;
+  }catch{setStatus('Could not inspect this page. You can still try its link.');}
+  showSource();
 }
-async function observe() {
-  if(!current)return;const origin=new URL(current.url).origin;const watched=watchedOrigins;
-  if(watched.includes(origin)){const {captured={}}=await api.storage.local.get('captured');for(const key of Object.keys(captured)){captured[key]=captured[key].filter(item=>{try{return new URL(item.pageUrl).origin!==origin;}catch{return false;}});if(!captured[key].length)delete captured[key];}await api.storage.local.set({watched:watched.filter(x=>x!==origin),captured});await api.permissions.remove({origins:[origin+'/*']});}
-  else {const granted=await api.permissions.request({origins:[origin+'/*']});if(!granted){feedback('Site access was not granted. You can still paste a media URL.');return;}await api.storage.local.set({watched:[...watched,origin].slice(-40)});feedback('Stream detection enabled for this site. Play the video, then Refresh tabs. Cross-origin CDN requests may not be visible without separate permission.');}
-  await loadTabs();
+async function verifyPage(){
+  const tab=await api.tabs.get(source.id);if(!tab||tab.incognito||tab.url!==source.url)throw new Error('The video page changed. Reopen LessonShelf.');
+  if(!pageSnapshot)return null;
+  const r=await api.scripting.executeScript({target:{tabId:source.id},func:inspectPage});const now=r[0]?.result;
+  if(!now||now.url!==pageSnapshot.url||now.documentStamp!==pageSnapshot.documentStamp)throw new Error('The video page changed. Reopen LessonShelf.');return now;
 }
-async function requestNativeConsent(){if(!api.runtime.getManifest?.().browser_specific_settings?.gecko)return;const accepted=await api.permissions.request({data_collection:['browsingActivity','websiteContent']});if(!accepted)throw new Error('Local companion access was not granted. Direct file downloads in the browser remain available.');}
-async function native(request) {
-  const r=await api.runtime.sendMessage({type:'native',request:{requestId:crypto.randomUUID(),...request}});
-  if(!r?.ok)throw new Error(r?.error||'The local companion did not respond.');return r;
+function askConsent(){if(!firefox||consent)return Promise.resolve(true);return api.permissions.request(dataPermissions);}
+async function native(request){const result=await api.runtime.sendMessage({type:'native',request:{requestId:crypto.randomUUID(),...request}});if(!result?.ok)throw new Error(result?.error||'The local downloader did not respond.');return result;}
+function resolveWithinLimit(request){let timer;return Promise.race([native(request),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('The local downloader did not respond. Check Help & setup, then try again.')),45000)})]).finally(()=>clearTimeout(timer));}
+function settings(){const course=$('course').value.trim();if(course&&(/[\\/]|^\.{1,2}$/.test(course)))throw new Error('Use a course name without slashes.');return {quality:$('quality').value,audio:$('audio').value==='audio',captions:$('captions').value==='english',copy:$('copy').value,course,engine:'auto'};}
+function beginDownload(){
+  if(privateMode||busy)return;
+  let options,url,pasted;try{options=settings();pasted=!$('paste-area').hidden&&Boolean($('url').value.trim());url=validURL(pasted?$('url').value.trim():source?.url||'');}catch(e){setStatus(e.message||'Enter a valid video link.');return;}
+  busy=true;$('download').disabled=true;setStatus('Preparing video…');
+  let permission;try{permission=askConsent()}catch(e){permission=Promise.reject(e)}
+  (async()=>{
+    if(!await permission){setStatus('Permission was not granted. You can try again.');return;}
+    consent=true;syncConsent();let verifiedManifest=false;
+    if(!pasted){const now=await verifyPage();const player=selectedPlayer();if(now&&player){const live=now.videos.find(v=>v.index===player.index);if(!live||Math.abs((live.duration||0)-(player.duration||0))>2)throw new Error('The video changed. Reopen LessonShelf.');
+      if(/^https?:/i.test(live.src)&&/\.(mp4|webm|m3u8|mpd)(?:[?#]|$)/i.test(live.src))url=validURL(live.src);
+      else if(now.resources.length&&live.duration>0){setStatus('Finding this video…');const found=await resolveWithinLimit({op:'resolve',candidates:now.resources,duration:live.duration,quality:options.quality});if(found.url){url=validURL(found.url);verifiedManifest=true;}}
+    }}
+    const r=await native({op:'enqueue',jobs:[{url,pageUrl:pasted?url:source.url,title:pasted?'Video':source.title,...options,verifiedManifest}]});
+    lastJobId=r.jobIds?.[0]||null;if(lastJobId&&!pasted&&pageSnapshot){lastDownload={id:lastJobId,tabId:source.id,stamp:pageSnapshot.documentStamp};await api.storage.local.set({lastDownload})}setStatus('Added to downloads.');renderJobs(r.jobs||[]);
+  })().catch(e=>setStatus(e.message||'Could not start the download.')).finally(()=>{busy=false;showSource();syncConsent()});
 }
-function renderJobs(jobs=[]) {
-  $('jobs').replaceChildren();if(!jobs.length){const p=document.createElement('p');p.className='empty';p.textContent='No downloads yet. Choose a video to get started.';$('jobs').append(p);return;}
-  for(const job of [...jobs].reverse()){
-    const card=document.createElement('article');card.className='job';const head=document.createElement('div');head.className='job-header';
-    const title=document.createElement('div');title.className='job-title';title.textContent=job.title||shortURL(job.url||'');const badge=document.createElement('span');badge.className='badge';badge.textContent=job.status;head.append(title,badge);card.append(head);
-    const progress=document.createElement('progress');progress.max=100;const n=Number(job.progress);if(Number.isFinite(n))progress.value=Math.min(100,Math.max(0,n));progress.setAttribute('aria-label',`Progress for ${title.textContent}`);card.append(progress);
-    const message=document.createElement('div');message.className='job-message';message.textContent=job.message||({'queued':'Waiting to start','done':'Saved locally','complete':'Saved locally','paused':'Partial files kept','cancelled':'Stopped; partial files kept'}[job.status]||'Working locally…');card.append(message);
-    if(Array.isArray(job.files)&&job.files.length){const files=document.createElement('div');files.className='job-message';files.textContent='Saved: '+job.files.join(' · ');card.append(files);}
-    const actions=document.createElement('div');actions.className='job-actions';let ops=[];
-    if(['queued','running','downloading','retrying','processing'].includes(job.status))ops=['pause','cancel'];
-    if(job.status==='paused')ops=['resume','cancel'];
-    if(['failed','error','cancelled','interrupted'].includes(job.status))ops=['retry'];
-    for(const op of ops){const b=document.createElement('button');b.textContent=job.engine==='n'&&['resume','retry'].includes(op)?'Restart':op[0].toUpperCase()+op.slice(1);b.setAttribute('aria-label',`${b.textContent} ${title.textContent}`);b.addEventListener('click',async()=>{b.disabled=true;try{if(['resume','retry'].includes(op))await requestNativeConsent();const result=await native({op,id:job.id});renderJobs(result.jobs);}catch(e){feedback(e.message);b.disabled=false;}});actions.append(b);}card.append(actions);$('jobs').append(card);
+function renderJobs(jobs=[]){
+  const signature=JSON.stringify(jobs);if(signature===lastRenderedJobs||$('jobs').contains?.(document.activeElement))return;lastRenderedJobs=signature;
+  $('jobs').replaceChildren();if(!jobs.length){const p=document.createElement('p');p.className='empty';p.textContent='No downloads yet.';$('jobs').append(p);return;}
+  for(const job of jobs){const card=document.createElement('div');card.className='job';const head=document.createElement('div');head.className='job-header';const title=document.createElement('span');title.className='job-title';title.textContent=job.title||'Video';const badge=document.createElement('span');badge.className='badge';badge.textContent=String(job.status||'').replaceAll('-',' ');head.append(title,badge);card.append(head);
+    if(['running','queued','retrying','processing'].includes(job.status)){const progress=document.createElement('progress');progress.max=100;progress.value=Number(job.progress)||0;progress.setAttribute('aria-label',`Progress for ${title.textContent}`);card.append(progress)}
+    const msg=document.createElement('div');msg.className='job-message';msg.textContent=job.message||'';card.append(msg);const acts=document.createElement('div');acts.className='job-actions';let ops=[];if(['running','queued','retrying','processing'].includes(job.status))ops=['pause','cancel'];else if(job.status==='paused')ops=['resume','cancel'];else if(['failed','cancelled'].includes(job.status))ops=['retry'];
+    for(const op of ops){const button=document.createElement('button');button.textContent=op[0].toUpperCase()+op.slice(1);button.setAttribute('aria-label',`${button.textContent} ${title.textContent}`);button.addEventListener('click',()=>{button.disabled=true;native({op,id:job.id}).then(r=>renderJobs(r.jobs||[])).catch(e=>{$('queue-access').textContent=e.message;button.disabled=false})});acts.append(button)}card.append(acts);if(Array.isArray(job.files)&&job.files.length){const details=document.createElement('details'),summary=document.createElement('summary');summary.textContent='Saved files';details.append(summary);for(const path of job.files){const item=document.createElement('div');item.className='job-message';item.textContent=path;details.append(item)}card.append(details)}$('jobs').append(card);
   }
+  const latest=jobs.find(x=>x.id===lastJobId);if(latest&&!busy&&$('queue-view').hidden)setStatus(`${latest.message||latest.status}${latest.progress&&latest.status==='running'?` (${Math.round(latest.progress)}%)`:''}`);
 }
-async function refreshStatus(){if(polling)return;polling=true;try{const r=await native({op:'status'});connected=true;$('connection').className='notice connected';$('connection').textContent='Companion connected · Downloads stay on this computer';renderJobs(r.jobs);}catch(e){connected=false;$('connection').className='notice';$('connection').textContent=e.message;}finally{polling=false;}}
-function settings(){return {quality:$('quality').value,audio:$('audio').value==='audio',captions:$('captions').value==='english',course:$('course').value.trim(),copy:$('copy').value,engine:$('engine').value};}
-function hints(){$('copy-hint').textContent=$('audio').value==='audio'?'Audio-only output; extra video copy settings do not apply.':$('copy').value==='av1'?'Keeps the original. AV1 is less compatible; only retain a validated copy if at least 15% smaller.':$('copy').value==='none'?'Preserves the downloaded source without an additional video encode.':'Keeps the original. Makes a compatible projector copy; encoding takes time.';$('engine-hint').textContent=$('engine').value==='n'?'Advanced: use a direct HLS (.m3u8) or DASH (.mpd) manifest, not a page. N keeps temporary data, but cross-process resume is not guaranteed; Retry may re-download segments.':'yt-dlp preserves partial files and retries interrupted downloads. Signed links may expire and need refreshing.';}
-async function enqueue(){if(busy)return;feedback('');let jobs;try{const opts=settings();if(opts.course&&(/[\\/]|^\.{1,2}$/.test(opts.course)))throw new Error('Use a course name without slashes or path traversal.');const items=candidates.filter(x=>selected.has(x.url));for(const url of parseInput($('urls').value))if(!items.some(x=>x.url===url))items.push({url,title:'',pageUrl:''});if(!items.length)throw new Error('Select a page or media link, or paste a URL first.');if(items.length>50)throw new Error('Please queue at most 50 links at a time.');if(opts.engine==='n'&&items.some(x=>!/\.(m3u8|mpd)(?:[?#]|$)/i.test(x.url)))throw new Error('N_m3u8DL-RE needs direct .m3u8 or .mpd manifest URLs. Deselect page URLs or use yt-dlp.');jobs=items.map(x=>({...x,...opts}));}catch(e){feedback(e.message);return;}
-  busy=true;$('download').disabled=true;$('download').textContent='Adding to your local queue…';try{await requestNativeConsent();const r=await native({op:'enqueue',jobs});renderJobs(r.jobs);feedback('Added to your local queue. Duplicate jobs are not started twice.');$('urls').value='';}catch(e){feedback(e.message);}finally{busy=false;$('download').disabled=false;$('download').textContent='Download selected';}
-}
-async function downloadDirect(){
-  feedback('');const button=$('direct-download');let urls;
-  try{const pasted=parseInput($('urls').value);urls=[...new Set(pasted.length?pasted:candidates.filter(x=>selected.has(x.url)).map(x=>x.url))];
-    if(!urls.length)throw new Error('Select or paste a direct file link first.');
-    if(urls.length>50)throw new Error('Choose at most 50 files at a time.');
-    if(urls.some(url=>!/\.(mp4|webm|mp3|m4a|wav)$/i.test(new URL(url).pathname)))throw new Error('Browser download needs direct MP4, WebM, MP3, M4A or WAV links. Deselect pages or use the companion.');
-  }catch(e){feedback(e.message);return;}
-  button.disabled=true;let started=0;
-  try{for(const url of urls){await api.downloads.download({url});started++;}feedback(`${started} file(s) sent to browser downloads. Check your browser for progress.`);$('urls').value='';}
-  catch(e){feedback(`${started} file(s) started. Browser download failed: ${e.message}`);}finally{button.disabled=false;}
-}
-$('direct-download').addEventListener('click',downloadDirect);
-$('theme').addEventListener('click',async()=>{const theme=document.documentElement.dataset.theme==='dark'?'light':'dark';applyTheme(theme);await api.storage.local.set({theme});});
-$('refresh').addEventListener('click',()=>loadTabs());$('scan').addEventListener('click',scan);$('observe').addEventListener('click',()=>observe().catch(e=>feedback(e.message)));$('select-all').addEventListener('change',e=>{selected=e.target.checked?new Set(candidates.map(x=>x.url)):new Set();renderCandidates();});$('clear').addEventListener('click',()=>{selected.clear();renderCandidates();});$('download').addEventListener('click',enqueue);$('reconnect').addEventListener('click',async()=>{try{await requestNativeConsent();await refreshStatus();}catch(e){feedback(e.message);}});$('expand').addEventListener('click',()=>api.tabs.create({url:api.runtime.getURL('popup.html')}));$('doctor').addEventListener('click',async()=>{try{$('doctor-result').textContent='Checking…';await requestNativeConsent();const r=await native({op:'doctor'});$('doctor-result').textContent=JSON.stringify(r.doctor||r,null,2);}catch(e){$('doctor-result').textContent=e.message;}});
-for(const id of settingsIds)$(id).addEventListener('change',async()=>{hints();const saved={};for(const key of settingsIds)saved[key]=$(key).value;await api.storage.local.set({settings:saved});});
-(async()=>{if(privateMode){for(const child of document.querySelector('main').children)if(child.id!=='connection'&&!child.classList.contains('privacy'))child.hidden=true;$('connection').textContent='LessonShelf is unavailable in private browsing. Open a regular window to use it.';return;}const {theme='light'}=await api.storage.local.get('theme');applyTheme(theme);const {settings:saved={}}=await api.storage.local.get('settings');for(const id of settingsIds)if(saved[id]!==undefined)$(id).value=saved[id];hints();await loadTabs(true);await refreshStatus();setInterval(refreshStatus,2000);})();
+async function refreshStatus(){if(privateMode||!consent||polling)return;polling=true;try{const r=await native({op:'status'});$('queue-access').textContent='';renderJobs(r.jobs||[])}catch(e){$('queue-access').textContent=e.message;$('jobs').replaceChildren();lastRenderedJobs='';if(!$('queue-view').hidden)setStatus('');}finally{polling=false}}
+function allowQueue(){if(privateMode)return;let request;try{request=askConsent()}catch(e){request=Promise.reject(e)}Promise.resolve(request).then(ok=>{if(!ok){$('queue-access').textContent='Permission was not granted. You can try again.';return}consent=true;syncConsent();$('queue-allow').hidden=true;return refreshStatus()}).catch(e=>{$('queue-access').textContent=e.message})}
+$('download').addEventListener('click',beginDownload);
+$('theme').addEventListener('click',()=>{const t=document.documentElement.dataset.theme==='dark'?'light':'dark';setTheme(t);api.storage.local.set({theme:t})});
+$('paste').addEventListener('click',()=>{$('paste-area').hidden=!$('paste-area').hidden;if(!$('paste-area').hidden)$('url').focus();showSource()});$('url').addEventListener('input',showSource);$('player-choice').addEventListener('change',showSource);
+$('downloads').addEventListener('click',()=>{if(privateMode)return;$('video-view').hidden=true;$('queue-view').hidden=false;if(!consent){$('queue-access').textContent='Allow access to view your downloads.';$('queue-allow').hidden=false;$('jobs').replaceChildren()}else refreshStatus()});$('back').addEventListener('click',()=>{if(privateMode)return;$('queue-view').hidden=true;$('video-view').hidden=false});$('queue-allow').addEventListener('click',allowQueue);
+$('direct-download').addEventListener('click',async()=>{if(privateMode)return;try{const url=validURL($('url').value.trim());await api.downloads.download({url,saveAs:false});setStatus('Browser download started. Original quality.') }catch(e){setStatus(e.message||'The browser download could not start.')}});
+$('reconnect').addEventListener('click',()=>{if(privateMode)return;let request;try{request=askConsent()}catch(e){request=Promise.reject(e)}Promise.resolve(request).then(ok=>{if(!ok)throw new Error('Permission was not granted.');consent=true;syncConsent();return refreshStatus()}).then(()=>setStatus('Reconnected.')).catch(e=>setStatus(e.message))});
+$('doctor').addEventListener('click',()=>{if(privateMode)return;let request;try{request=askConsent()}catch(e){request=Promise.reject(e)}Promise.resolve(request).then(ok=>{if(!ok)throw new Error('Permission was not granted.');consent=true;syncConsent();return native({op:'doctor'})}).then(r=>{$('doctor-result').textContent=['yt-dlp','ffmpeg','ffprobe','N_m3u8DL-RE'].map(k=>`${k}: ${r.doctor?.[k]?.available?'available':'not found'}`).join('\n')}).catch(e=>{$('doctor-result').textContent=e.message})});
+for(const id of settingIds)$(id).addEventListener('change',()=>{const saved={};for(const key of settingIds)saved[key]=$(key).value;api.storage.local.set({settings:saved})});
+(async()=>{if(privateMode){$('video-view').hidden=true;$('queue-view').hidden=false;$('queue-access').textContent='LessonShelf is unavailable in private browsing. Open a regular window.';$('back').hidden=true;$('queue-allow').hidden=true;return}const {theme='light',settings:saved={},lastDownload:stored=null}=await api.storage.local.get(['theme','settings','lastDownload']);lastDownload=stored;setTheme(theme);for(const id of settingIds)if(saved[id]!==undefined&&[...($(id).options||[])].some(o=>o.value===saved[id])||id==='course'&&saved[id]!==undefined)$(id).value=saved[id];if(firefox){try{consent=await api.permissions.contains(dataPermissions)}catch{consent=false}}syncConsent();await scanCurrent();if(lastDownload&&source&&pageSnapshot&&lastDownload.tabId===source.id&&lastDownload.stamp===pageSnapshot.documentStamp)lastJobId=lastDownload.id;if(consent)refreshStatus();setInterval(refreshStatus,2000)})().catch(()=>setStatus('Could not open LessonShelf. Try again.'));
