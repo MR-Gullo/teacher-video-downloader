@@ -1,77 +1,32 @@
-# Mac setup — run these on your Mac only when ready
+# Set up the optional Mac companion
 
-This is a source preview, not a signed store release. Review the files before running. The preview is not a signed store release. Keep the extracted folder in a stable location (for example `~/Applications/teacher-video-downloader`).
+Direct MP4, WebM, MP3, M4A and WAV files can be downloaded by the extension through your browser. The local queue, HLS streams and video conversion need this separate Mac companion and its tools. The extension does not include them. Windows does not currently have a companion.
 
-For direct MP4, WebM, MP3, M4A or WAV links, the extension can use the browser download manager without the companion. The steps below add support for page downloads, conversion and the local queue.
+The normal Firefox / Zen installer for the repaired release is not available yet. When it is available, install the extension first and then follow these companion steps. Only save videos you have permission to use. Protected media is not supported.
 
-## 1. Dependencies
+## 1. Install the required tools
 
-Use your already-installed trusted package manager. If Homebrew is already installed:
+If you already use Homebrew on your Mac, open Terminal and run:
 
 ```sh
 brew install python yt-dlp ffmpeg
-# Helpful for current YouTube extractor JavaScript challenges:
-brew install deno
-# Optional only; not used by this preview's adapter:
-brew install aria2
 ```
 
-Do not run an unknown install script just because a webpage suggests it. Current yt-dlp YouTube support may need a supported JavaScript runtime and matching EJS components; consult its official EJS guide. Remote component downloads are deliberately disabled in our adapter. Package-manager builds may include the needed components; verify on your Mac rather than assuming.
+The companion uses Python, yt-dlp and FFmpeg installed on your Mac. It does not export your browser cookies. Some sites or media may not be supported. The optional N_m3u8DL-RE engine has additional setup in [ENGINE-NOTES.md](ENGINE-NOTES.md); it is not required for the default engine.
 
-For **N_m3u8DL-RE**, use the official project release page linked in ENGINE-NOTES. Choose the macOS build matching Apple silicon (`arm64`) or Intel (`x64`); inspect its publisher and any provided checksums/signatures. Extract the executable into a trusted directory such as `/usr/local/bin` or `/opt/homebrew/bin` with normal user-approved installation. No N binary is bundled here and no unverified binary was downloaded in the VM. Review macOS security prompts; this project does not tell you to disable Gatekeeper.
+## 2. Install the companion for Firefox / Zen
 
-Confirm:
-
-```sh
-python3 --version
-yt-dlp --version
-ffmpeg -version
-ffprobe -version
-N_m3u8DL-RE --help
-```
-
-N must expose `--no-config`, `--disable-update-check`, `--write-meta-json` and the documented current stream-selection flags. Old releases may be rejected or fail; install a current official build. `python3 companion/cli.py --doctor` reports installed paths, not a guarantee of live-site support.
-
-## 2. Build browser folders
-
-In Terminal, `cd` into the extracted project:
-
-```sh
-python3 scripts/build.py
-```
-
-This writes `build/chrome/` and `build/firefox/` from the same source. The ZIP already contains these folders; rebuilding is optional.
-
-### Chrome
-
-1. Open `chrome://extensions` yourself, enable Developer mode.
-2. Choose **Load unpacked**, select `build/chrome`.
-3. Copy its32-letter extension ID. Keep this folder in place; moving it can change an unpacked ID.
-4. Install the companion allowlist using that exact ID:
-
-```sh
-python3 scripts/install-macos.py --chrome-id YOUR_32_LETTER_ID
-```
-
-### Firefox
-
-Open `about:debugging#/runtime/this-firefox` yourself, choose **Load Temporary Add-on**, select `build/firefox/manifest.json`.
+1. Open the [LessonShelf source repository](https://github.com/MR-Gullo/teacher-video-downloader). Choose **Code**, then **Download ZIP**.
+2. Unzip the download and open the extracted folder in Terminal. Review the source before running its installer.
+3. Run:
 
 ```sh
 python3 scripts/install-macos.py --firefox
 ```
 
-For both browsers, use **one install command**, e.g.:
+4. Open LessonShelf and choose **Reconnect**, then **Check local tools**. The fixed Firefox add-on ID is `teacher-video-downloader@local.invalid`.
 
-```sh
-python3 scripts/install-macos.py --chrome-id YOUR_32_LETTER_ID --firefox
-```
-
-Temporary Firefox add-ons disappear after Firefox restarts. Reload the same manifest to reconnect to the durable queue. Persistent normal-release Firefox installation requires Mozilla signing, which has **not** been obtained. The fixed add-on ID is `teacher-video-downloader@local.invalid`.
-
-The installer refuses an existing app or matching host manifest rather than silently replacing it. For an update or to add another browser: pause jobs, uninstall (below), then install with both desired flags. Installation is per-user only; no sudo, TCP service or LaunchAgent is created.
-
-After loading, press **Option+Shift+V** on a video page to open LessonShelf. If the shortcut conflicts, change it in the browser extension shortcuts settings.
+The installer works per user and does not need sudo. It stops if it finds an existing companion or Firefox host manifest. Do not replace an existing setup until its queue, browser registrations, and active downloads have been checked.
 
 ## 3. Output location and first connection
 
