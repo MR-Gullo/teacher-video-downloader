@@ -28,6 +28,10 @@ python3 scripts/install-macos.py --firefox
 
 The installer works per user and does not need sudo. It stops if it finds an existing companion or Firefox host manifest. Do not replace an existing setup until its queue, browser registrations, and active downloads have been checked.
 
+## Find a stream
+
+On a supported page, start the video, open LessonShelf, and choose **Find media**. Select an HLS manifest if one appears, then choose **Download selected** to use the Mac companion. A page URL may be unsupported even when the player exposes a usable manifest. Review the result before class; the extension cannot save every stream, and protected media is not supported.
+
 ## 3. Output location and first connection
 
 Default: `~/Downloads/youtube-downloads`. For a persistent different location, add `--output-dir '/Volumes/Teaching/Video'` to the install command. The destination must be writable. APFS/HFS+ local storage is recommended; atomic publication uses hard links and fails safely on a filesystem that does not support them (for example some network/removable filesystems). Output directories with untrusted symlinks should not be used.
