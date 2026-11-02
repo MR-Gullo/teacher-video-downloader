@@ -107,7 +107,7 @@ def engine_argv(d,work, help_text=None):
         a=['yt-dlp','--ignore-config','--no-plugin-dirs','--no-remote-components','--no-playlist','--no-overwrites','--continue','--part','--retries','8','--fragment-retries','8','--retry-sleep','http:exp=1:30','--retry-sleep','fragment:exp=1:30','--abort-on-unavailable-fragments','--newline','--progress','--progress-template','download:TVD:%(progress._percent_str)s','--no-write-info-json','--no-cookies-from-browser','--no-cookies','--embed-chapters','--no-embed-info-json','-o',str(work/'source.%(ext)s')]
         if d['audio']:a+=['-f','bestaudio/best','-x','--audio-format','m4a']
         else:
-            q=d['quality'];f='bv*+ba/b' if q=='best' else f'bv*[height<={q}]+ba/b[height<={q}]'
+            q=d['quality'];f='bv*+ba/b' if q=='best' else f'bv*[height<={q}]+ba/b[height<={q}]/b[height<=?{q}]'
             a+=['-f',f,'--merge-output-format','mkv']
         if d['captions'] and not d['audio']:a+=['--write-subs','--write-auto-subs','--sub-langs','en.*,en','--convert-subs','srt','--embed-subs']
         return a+['--',d['url']]

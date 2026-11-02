@@ -1,24 +1,21 @@
 # LessonShelf · Local Video
 
-**Reviewable preview for Mac testing — not yet live-site or browser-integration validated.**
-
-A Chrome/Firefox extension and small Python native-messaging companion for saving videos you have permission to use in class. No web service, account, telemetry, remote download proxy, cloud transcription, or bundled third-party executable. This preview is distributed as source and unsigned browser builds.
+**Unsigned Windows and Mac tester preview.** The extension can save supported direct media files through the browser. The optional companion adds a local queue and conversion on Mac. Browser installation and native messaging on this Mac have not yet been verified.
 
 ## Start here
 
-1. Read [Mac setup](docs/MAC-SETUP.md).
-2. Load the appropriate extension build and install the user-scoped companion.
-3. Open **Dependency check**, then try one short, freely downloadable video before a lesson batch.
-4. Follow the [Mac acceptance checklist](docs/MAC-ACCEPTANCE.md). See [test evidence and gaps](docs/TEST-REPORT.md) before relying on it.
+Open the [tester setup page](https://mr-gullo.github.io/teacher-video-downloader/) for browser-specific steps. In this source folder, open `index.html` in a browser. Get the preview ZIP, load the Chrome folder unpacked or load the Firefox manifest as a temporary add-on, then try the sample video on the page. Firefox and Zen require reloading the temporary add-on after restart. Chrome developer mode is required. This is not a signed store release.
+
+On either platform, open LessonShelf on a video page, choose **Find media**, and use **Download direct files in browser** for a selected MP4, WebM, MP3, M4A or WAV link. Browser downloads use the browser's downloads folder and may send the browser's normal cookies for the requested site. Sites can refuse access, and protected media is unsupported.
+
+On Mac, the optional local companion provides page extraction, queue recovery, and conversion. Follow [Mac setup](docs/MAC-SETUP.md) and the [acceptance checklist](docs/MAC-ACCEPTANCE.md). See [test evidence](docs/TEST-REPORT.md). The companion and its tools are not available on Windows in this preview.
 
 ### Teacher defaults
 
-- Save under `~/Downloads/youtube-downloads`; optional course folder. `YTDL_OUTPUT_DIR` overrides the location; installer `--output-dir` persists it for browser launches.
-- Prefer a source at or below 1080p; retain it. Also prepare a broadly compatible H.264, 8-bit yuv420p / AAC MP4 classroom copy. Compatible H.264 video and AAC audio are copied instead of recompressed. No forced frame-rate reduction.
-- Request English manual and automatic captions; yt-dlp converts to SRT and embeds selectable subtitles. Classroom MP4 uses selectable `mov_text`, **not** burned-in captions. Availability varies; missing captions are a warning, never invented. Temporary SRTs are removed after success; originals/sidecars remain on failures.
-- Keep chapters. Save sanitized source provenance beside the video; classroom copy also embeds that source in its comment. Signed query parameters are excluded (YouTube video ID retained). Provider-origin metadata may remain in source media.
-- Optional AV1 storage copy is slower and less projector-compatible. It is attempted only for sources at least 720p and not already AV1/HEVC/VP9; capped at1080p; kept only after full decode/track/chapter/frame-rate checks **and** at least15% reduction. Original remains.
-- Stable names look like `00_Lesson title_1a2b3c4d_original.mkv` and `00_Lesson title_1a2b3c4d_classroom.mp4`. The short job ID prevents collisions; files are published atomically without replacement. Original format is not falsely labelled MP4.
+- Companion output defaults to `~/Downloads/youtube-downloads`; optional course folder. `YTDL_OUTPUT_DIR` can override the location.
+- Prefer a source at or below 1080p; retain it. If a direct file has no reported height, its resolution cannot be checked before download. An optional H.264/AAC MP4 copy is prepared for projectors.
+- English captions and chapters are requested when available. Missing captions are reported. An optional AV1 copy is for storage and may take longer.
+- The original and partial files are retained. No automatic cleanup deletes recovery data.
 
 ### Direct file downloads
 
@@ -57,4 +54,4 @@ python3 companion/cli.py --input /path/to/video.mkv --mode av1 --execute
 python3 companion/cli.py --input /path/to/video.mkv --mode none
 ```
 
-Browser tests need Playwright and a permitted local Chromium launch. They are prepared, but this VM's Chromium launch/browser URL policies blocked visual and integration tests. They are not labelled passed. See [architecture/security](docs/ARCHITECTURE.md) and [official capability references](docs/ENGINE-NOTES.md).
+See [test evidence](docs/TEST-REPORT.md), [architecture/security](docs/ARCHITECTURE.md), and [capability references](docs/ENGINE-NOTES.md).
