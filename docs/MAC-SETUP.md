@@ -71,6 +71,8 @@ Temporary Firefox add-ons disappear after Firefox restarts. Reload the same mani
 
 The installer refuses an existing app or matching host manifest rather than silently replacing it. For an update or to add another browser: pause jobs, uninstall (below), then install with both desired flags. Installation is per-user only; no sudo, TCP service or LaunchAgent is created.
 
+After loading, press **Option+Shift+V** on a video page to open LessonShelf. If the shortcut conflicts, change it in the browser extension shortcuts settings.
+
 ## 3. Output location and first connection
 
 Default: `~/Downloads/youtube-downloads`. For a persistent different location, add `--output-dir '/Volumes/Teaching/Video'` to the install command. The destination must be writable. APFS/HFS+ local storage is recommended; atomic publication uses hard links and fails safely on a filesystem that does not support them (for example some network/removable filesystems). Output directories with untrusted symlinks should not be used.

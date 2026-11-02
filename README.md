@@ -6,7 +6,7 @@
 
 Open the [tester setup page](https://mr-gullo.github.io/teacher-video-downloader/) for browser-specific steps. In this source folder, open `index.html` in a browser. Get the preview ZIP, load the Chrome folder unpacked or load the Firefox manifest as a temporary add-on, then try the sample video on the page. Firefox and Zen require reloading the temporary add-on after restart. Chrome developer mode is required. This is not a signed store release.
 
-On either platform, open LessonShelf on a video page, choose **Find media**, and use **Download direct files in browser** for a selected MP4, WebM, MP3, M4A or WAV link. Browser downloads use the browser's downloads folder and may send the browser's normal cookies for the requested site. Sites can refuse access, and protected media is unsupported.
+On either platform, press Option+Shift+V on Mac or Alt+Shift+V on Windows to open LessonShelf on a video page, choose **Find media**, and use **Download direct files in browser** for a selected MP4, WebM, MP3, M4A or WAV link. Browser downloads use the browser's downloads folder and may send the browser's normal cookies for the requested site. Sites can refuse access, and protected media is unsupported.
 
 On Mac, the optional local companion provides page extraction, queue recovery, and conversion. Follow [Mac setup](docs/MAC-SETUP.md) and the [acceptance checklist](docs/MAC-ACCEPTANCE.md). See [test evidence](docs/TEST-REPORT.md). The companion and its tools are not available on Windows in this preview.
 
@@ -32,7 +32,7 @@ Close the popup or browser: already-started jobs continue locally while the Mac 
 ### Important boundaries
 
 - No DRM key extraction, decryption-key entry, access/geographic restriction bypass, or browser-profile dumping.
-- **Authenticated-cookie export is not implemented in this preview.** No cookies or authorization headers are read/sent. Public or already-authorized signed media URLs may work until expiry. N's domain-scoped cookie feature is not exposed here. Do not paste secrets into titles/logs.
+- **Authenticated-cookie export is not implemented in this preview.** The companion does not read or export cookies or authorization headers. Browser-managed downloads make normal site requests and may send the browser's site cookies. Public or already-authorized signed media URLs may work until expiry. N's domain-scoped cookie feature is not exposed here. Do not paste secrets into titles/logs.
 - **Spokenly is explicitly not configured.** Its actual interface and backend privacy were not supplied or verified; no invented flags and no automatic cloud fallback. Doctor states this clearly.
 - yt-dlp, FFmpeg and N must be installed separately. N's real adapter is present; the binary and live services were unavailable to verify here. aria2c is optional for a future/external direct-file workflow; this build does not invoke it.
 - Original downloads, failed partials and queue history are intentionally retained. They consume disk. No automatic cleanup erases recovery data; see the setup guide for deliberate cleanup.
