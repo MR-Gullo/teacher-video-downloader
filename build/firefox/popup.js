@@ -26,8 +26,7 @@ async function loadTabs(initial=false) {
   try {
     const tabs=await api.tabs.query({currentWindow:true});
     const active=tabs.find(t=>t.active && /^https?:/.test(t.url || ''));
-    if(active) current=active;
-    if(!current) current=tabs.find(t=>/^https?:/.test(t.url || '')) || null;
+    current=active || null;
     candidates=[];tabs.filter(t=>/^https?:/.test(t.url || '')).forEach(t=>addCandidate({url:t.url,title:t.title,pageUrl:t.url,kind:t.id===current?.id?'Current page':'Open tab'}));
     const {captured={}}=await api.storage.local.get('captured');
     for(const t of tabs) for(const item of captured[String(t.id)]||[]) addCandidate(item);

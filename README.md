@@ -1,6 +1,6 @@
 # LessonShelf · Local Video
 
-**Unsigned Windows and Mac tester preview.** The extension can save supported direct media files through the browser. The optional companion adds a local queue and conversion on Mac. Browser installation and native messaging on this Mac have not yet been verified.
+**Unsigned Windows and Mac tester preview.** The extension can save supported direct media files through the browser. The optional companion adds a local queue and conversion on Mac. Chrome and Zen preview installs and native messaging were tested on this Mac; Windows and signed distribution remain unverified.
 
 ## Start here
 
