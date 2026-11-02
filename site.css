@@ -2,3 +2,5 @@
 
 .helper{border-top:1px solid var(--line);margin-top:24px;padding-top:18px;color:var(--muted);font-size:14px}.helper summary{cursor:pointer;color:var(--accent);font-weight:700}.helper li{margin-bottom:10px}.helper p{margin-top:14px}
 .demo{padding:70px 32px;max-width:900px}.demo h1{font-size:clamp(42px,6vw,64px)}.demo p{max-width:70ch}.demo video{display:block;max-width:100%;height:auto;background:#252422;border-radius:10px;margin:28px 0}
+
+[hidden]{display:none!important}.steps ol{padding-top:20px}
