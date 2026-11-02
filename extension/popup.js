@@ -9,6 +9,7 @@ function feedback(message) { $('feedback').textContent = message; $('feedback').
 function httpURL(raw) { const url = new URL(raw); if (!['http:','https:'].includes(url.protocol) || url.username || url.password) throw new Error('Use an HTTP or HTTPS link without embedded credentials.'); return url.href; }
 function parseInput(raw) { return [...new Set(raw.split(/(?:\s+|,\s*(?=https?:\/\/|[\w-]{11}(?:[\s,]|$)))/).filter(Boolean).map(s => httpURL(/^[\w-]{11}$/.test(s) ? `https://www.youtube.com/watch?v=${s}` : s)))]; }
 function shortURL(url) { try { const u = new URL(url); return u.hostname + (u.pathname === '/' ? '' : u.pathname); } catch { return 'Unavailable page'; } }
+function mediaLabel(url) { try { const u=new URL(url),match=u.pathname.match(/\.(m3u8|mpd|mp4|webm|mp3|m4a|wav)$/i),ext=match?.[1].toLowerCase(),type=ext==='m3u8'?'HLS':ext==='mpd'?'DASH':ext?.toUpperCase()||'media';return `${u.hostname} · ${type}`; } catch { return 'Media link'; } }
 function addCandidate(item) { try { item.url = httpURL(item.url); } catch { return; } if (!candidates.some(x => x.url === item.url)) candidates.push(item); }
 function renderCandidates() {
   $('candidates').replaceChildren();
@@ -18,7 +19,7 @@ function renderCandidates() {
     const input=document.createElement('input');input.type='checkbox';input.checked=selected.has(item.url);input.setAttribute('aria-label',`Select ${item.title || shortURL(item.url)}`);
     input.addEventListener('change',()=>{input.checked?selected.add(item.url):selected.delete(item.url);updateCount();});
     const text=document.createElement('div'), title=document.createElement('strong'),sub=document.createElement('small');
-    title.textContent=item.title || shortURL(item.url);sub.textContent=`${item.kind || 'Web page'} · ${shortURL(item.url)}`;
+    title.textContent=item.title || shortURL(item.url);sub.textContent=`${item.kind || 'Web page'} · ${['Page media','Detected stream'].includes(item.kind)?mediaLabel(item.url):shortURL(item.url)}`;
     text.append(title,sub);label.append(input,text);$('candidates').append(label);
   }); updateCount();
 }
