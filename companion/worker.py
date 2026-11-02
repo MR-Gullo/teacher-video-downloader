@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 import fcntl, hashlib, json, os, re, select, shutil, signal, subprocess, sys, tempfile, time
 from pathlib import Path
-from core import APP, STATE, OUTPUT, setup, update, engine_argv, safe_name
+from urllib.parse import urlsplit
+from core import APP, STATE, OUTPUT, setup, update, engine_argv, safe_name, find_n
 from media import probe, copy_plan, validate_copy
 STOP=False
 CHILD=None
@@ -89,24 +90,11 @@ def publish(src,folder,prefix):
 def choose_engine(d):
     if d.get('engine')!='auto':return d['engine']
     if not d.get('verifiedManifest'):return 'yt-dlp'
-    known=Path.home()/'Library/Application Support/Teacher Video Downloader/tools/N_m3u8DL-RE-0.6.0-beta'
-    expected='c332b463aa42975c25217d56a51a2ea32fddfd86b4ae8338a8f7416b0bc196e7'
-    try:
-        if known.is_file() and os.access(known,os.X_OK) and hashlib.sha256(known.read_bytes()).hexdigest()==expected:
-            p=subprocess.run([str(known),'--help'],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=15)
-            text=p.stdout.decode(errors='replace')
-            if p.returncode==0 and all(x in text for x in ('--disable-update-check','--write-meta-json','-sv','-sa')):
-                d['_n_path']=str(known);d['_known_n']=True;return 'n'
-    except (OSError,subprocess.TimeoutExpired):pass
-    path=shutil.which('N_m3u8DL-RE')
+    path,known=find_n()
     if not path:return 'yt-dlp'
-    try:
-        p=subprocess.run([path,'--help'],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=15)
-        text=p.stdout.decode(errors='replace')
-        required=('--no-config','--disable-update-check','--write-meta-json','--vod-select-parts','-sv','-sa','-ds')
-        if p.returncode==0 and all(x in text for x in required):d['_n_path']=path;return 'n'
-    except (OSError,subprocess.TimeoutExpired):pass
-    return 'yt-dlp'
+    d['_n_path']=path
+    if known:d['_known_n']=True
+    return 'n'
 
 def n_preflight(d,work,help_text):
     # Parse only: no segments or output media. Bound a broken local runtime.
@@ -118,6 +106,31 @@ def n_preflight(d,work,help_text):
     if any(x in output_categories(p.stdout) for x in ('access_denied','protected')):
         raise RuntimeError('Access was denied or the media is protected. No alternate engine was tried.')
     return p.returncode==0
+
+def source_is_silent(d):
+    # Only accept silent video when yt-dlp explicitly describes all video
+    # formats as having no audio and reports no separate audio formats.
+    argv=['yt-dlp','--ignore-config','--no-plugin-dirs','--no-remote-components','--no-cookies','--no-cookies-from-browser','--no-playlist','--skip-download','--dump-single-json','--socket-timeout','10','--retries','0','--',d['url']]
+    try:
+        p=subprocess.run(argv,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=30)
+        if p.returncode or len(p.stdout)>4*1024*1024:return False
+        meta=json.loads(p.stdout);formats=meta.get('formats') or []
+        videos=[f for f in formats if isinstance(f,dict) and f.get('vcodec') not in (None,'none')]
+        if not videos or not all(f.get('acodec')=='none' for f in videos) or any(f.get('acodec') not in (None,'none') for f in formats if isinstance(f,dict)):return False
+        unknown=[f for f in formats if isinstance(f,dict) and f.get('acodec') is None]
+        if not unknown:return True
+        # X exposes direct MP4 formats without codec metadata. Probe only its
+        # official video host and require every unknown format to be silent.
+        if urlsplit(d['url']).hostname not in ('x.com','www.x.com','twitter.com','www.twitter.com') or len(unknown)>8:return False
+        for f in unknown:
+            u=urlsplit(f.get('url',''))
+            if u.scheme!='https' or u.hostname!='video.twimg.com' or u.username or u.password:return False
+            check=subprocess.run(['ffprobe','-v','error','-rw_timeout','8000000','-show_entries','stream=codec_type','-of','json',f['url']],stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=12)
+            if check.returncode or len(check.stdout)>128*1024:return False
+            streams=json.loads(check.stdout).get('streams',[])
+            if not any(x.get('codec_type')=='video' for x in streams) or any(x.get('codec_type')=='audio' for x in streams):return False
+        return True
+    except (OSError,subprocess.TimeoutExpired,ValueError,TypeError):return False
 
 def process(db,r,lockfd):
     id=r['id'];d=json.loads(r['data']);work=STATE/'jobs'/id;work.mkdir(parents=True,exist_ok=True,mode=0o700)
@@ -165,7 +178,9 @@ def process(db,r,lockfd):
     if not sources:raise RuntimeError('Engine reported success but no output media was found')
     source=max(sources,key=lambda p:p.stat().st_size);info=probe(source)
     if not info.get('streams'):raise RuntimeError('Empty media result')
-    if not any(x.get('codec_type')=='audio' for x in info['streams']):
+    has_audio=any(x.get('codec_type')=='audio' for x in info['streams'])
+    silent=not has_audio and not d['audio'] and d['engine']=='yt-dlp' and source_is_silent(d)
+    if not has_audio and not silent:
         raise RuntimeError('The downloaded media has no audio. Original retained in the local job folder.')
     if not d['audio'] and d['quality']!='best':
         video=[x for x in info['streams'] if x.get('codec_type')=='video']
@@ -178,12 +193,13 @@ def process(db,r,lockfd):
     for point in points:
         args=['ffmpeg','-nostdin','-v','error','-xerror','-ss',str(point),'-i',str(source),'-t','2']
         if not d['audio']:args+=['-map','0:v:0']
-        args+=['-map','0:a:0','-f','null','-']
+        if has_audio:args+=['-map','0:a:0']
+        args+=['-f','null','-']
         result=run(db,id,args,lockfd)
         if result is None or not active(db,id,'running'):return
         if result:raise RuntimeError('Downloaded media failed sample decoding. Original retained in the local job folder.')
     if not transition(db,id,'running',status='processing',progress=99,message='Validating original and preparing classroom copy'):return
-    files=[];warning='';course=OUTPUT/d['course'] if d['course'] else OUTPUT
+    files=[];warning='The source video has no audio.' if silent else '';course=OUTPUT/d['course'] if d['course'] else OUTPUT
     # Publishing original first ensures captions/copy failures cannot destroy it.
     prefix=f"{db.execute('SELECT count(*) FROM jobs WHERE created < ?',(r['created'],)).fetchone()[0]:02d}_{safe_name(d['title'])}_{id[:8]}"
     if not active(db,id,'processing'):return
@@ -201,10 +217,10 @@ def process(db,r,lockfd):
                 if validate_copy(source_info,dest,source,d['copy'],lambda a:run(db,id,a,lockfd,'processing')):
                     if not active(db,id,'processing'):return
                     files.append(publish(dest,course,prefix+('_classroom' if d['copy']=='classroom' else '_storage-av1')))
-                else:dest.unlink();warning='AV1 copy discarded: less than 15% saving. Original kept.'
-            else:warning=note
+                else:dest.unlink();warning=(warning+' ' if warning else '')+'AV1 copy discarded: less than 15% saving. Original kept.'
+            else:warning=(warning+' ' if warning else '')+note
         except InterruptedError:return
-        except Exception:warning='Classroom/storage copy failed validation or encoding. Original is safe; inspect dependencies and source format.'
+        except Exception:warning=(warning+' ' if warning else '')+'Classroom/storage copy failed validation or encoding. Original is safe; inspect dependencies and source format.'
     if not active(db,id,'processing'):return
     if d['captions'] and not any(x.get('codec_type')=='subtitle' for x in info['streams']) and not d['audio']:
         warning=(warning+' ' if warning else '')+'No embedded English captions were found; no automatic cloud transcription was attempted.'

@@ -61,11 +61,30 @@ def update(db,id,**kw):
     if not set(kw)<=allowed: raise ValueError('Invalid field')
     db.execute('UPDATE jobs SET '+','.join(k+'=?' for k in kw)+' WHERE id=?', [*kw.values(),id]);db.commit()
 
+def find_n():
+    known=Path.home()/'Library/Application Support/Teacher Video Downloader/tools/N_m3u8DL-RE-0.6.0-beta'
+    expected='c332b463aa42975c25217d56a51a2ea32fddfd86b4ae8338a8f7416b0bc196e7'
+    candidates=[]
+    try:
+        if known.is_file() and os.access(known,os.X_OK) and hashlib.sha256(known.read_bytes()).hexdigest()==expected:candidates.append((str(known),True))
+    except OSError:pass
+    path=shutil.which('N_m3u8DL-RE')
+    if path:candidates.append((path,False))
+    for path,known_version in candidates:
+        try:
+            p=subprocess.run([path,'--help'],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=15)
+            text=p.stdout.decode(errors='replace')
+            required=('--disable-update-check','--write-meta-json','-sv','-sa') if known_version else ('--no-config','--disable-update-check','--write-meta-json','--vod-select-parts','-sv','-sa','-ds')
+            if p.returncode==0 and all(x in text for x in required):return path,known_version
+        except (OSError,subprocess.TimeoutExpired):pass
+    return None,False
+
 def doctor():
     result={}
-    for tool in ('yt-dlp','ffmpeg','ffprobe','N_m3u8DL-RE','aria2c'):
+    for tool in ('yt-dlp','ffmpeg','ffprobe','aria2c'):
         path=shutil.which(tool)
         result[tool]={'available':bool(path),'path':path}
+    path,_=find_n();result['N_m3u8DL-RE']={'available':bool(path),'path':path}
     result['spokenly']={'available':False,'message':'Not configured. No cloud ASR is invoked. The actual adapter interface and privacy must be verified before integration.'}
     result['outputDir']=str(OUTPUT);result['stateDir']=str(STATE)
     return result
@@ -106,6 +125,13 @@ def handle(req, start=True):
             if op=='pause' and current in ('queued','running','retrying','processing'): update(db,id,status='paused',message='Paused; partial files retained')
             elif op=='cancel' and current not in ('complete','complete-warning'): update(db,id,status='cancelled',message='Cancelled; partial files retained')
             elif op in ('resume','retry') and current in ('paused','failed','cancelled','retrying'): update(db,id,status='queued',attempts=0,next_at=0,message=('Restart queued; files retained, but N may re-download segments' if json.loads(r['data'])['engine']=='n' else 'Queued using existing partial files'))
+        elif op=='reveal':
+            row=db.execute('SELECT status,files FROM jobs WHERE id=?',(req.get('id'),)).fetchone()
+            if not row or row['status'] not in ('complete','complete-warning'):raise ValueError('No completed download is available to show.')
+            files=json.loads(row['files']);target=next((Path(x) for x in files if Path(x).suffix.lower() in ('.mkv','.mp4','.webm','.m4a','.mp3','.opus','.mov','.ts') and Path(x).is_file()),None)
+            if not target:raise ValueError('The saved media file could not be found.')
+            if sys.platform!='darwin':raise ValueError('Show in Finder is available on Mac.')
+            subprocess.Popen(['/usr/bin/open','-R',str(target)],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,close_fds=True)
         elif op=='doctor':result['doctor']=doctor()
         elif op!='status':raise ValueError('Unknown operation')
         result['jobs']=status(db)

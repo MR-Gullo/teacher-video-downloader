@@ -1,5 +1,12 @@
 # Verification report — 2026-11-02
 
+## Progress and destination check — 2026-11-03
+
+- The existing Mudflats Living job completed with a missing-caption warning. In the temporary Zen preview, **Show in Finder** selected its recorded 720p H.264/AAC `.ts` file. No existing media or queue entries were removed.
+- A separate local test used a synthetic clip, an isolated queue and the real yt-dlp worker. A popup fixture in the in-app browser showed measured progress at 7%, 48% and, after reopening, 58%, then showed **Saved**. This fixture used synthetic extension APIs and was not an installed Zen extension test. The installed Zen popup showed the indeterminate preparation indicator; the permission step was interrupted before its isolated fixture job started.
+- The X source's four direct formats were probed and each contained video without audio. Future downloads accept this only after a source check confirms silence; the previous failed X jobs have not been retried. N may show indeterminate progress because its output does not provide the worker's percentage marker.
+- The updated Zen extension files are staged for reload. The final reload and live-progress check in Zen remain pending while the browser is in use. The temporary Progress QA extension and its isolated fixture files remain until they can be removed without disrupting that session.
+
 ## Firefox / Zen 0.3.0 temporary preview
 
 - The redesigned 0.3.0 preview was loaded temporarily in Zen with a separate extension ID and companion host. Its reduced-permission build detected the current page, restored completed-job status after reopening, and showed the saved destination. Keyboard theme switching and persistence were checked. The signed 0.2.1 add-on remains installed but was disabled to avoid duplicate controls. Temporary extensions require reloading after browser restart.

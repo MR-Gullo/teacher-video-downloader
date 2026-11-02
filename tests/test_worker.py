@@ -83,6 +83,30 @@ class Worker(unittest.TestCase):
    with patch.object(worker,'run',side_effect=execute),patch.object(worker,'probe',return_value={'streams':[{'codec_type':'video','height':720},{'codec_type':'audio'}]}):
     with self.assertRaisesRegex(RuntimeError,'sample decoding'):worker.process(db,r,1)
    self.assertEqual(db.execute('SELECT files FROM jobs').fetchone()[0],'[]');self.assertFalse((root/'output').exists());db.close()
+ def test_silent_source_requires_explicit_metadata(self):
+  from types import SimpleNamespace
+  d={'url':'https://example.com/video'}
+  samples=[({'formats':[{'vcodec':'h264','acodec':'none'}]},True),({'formats':[{'vcodec':'h264','acodec':None}]},False),({'formats':[{'vcodec':'h264','acodec':'none'},{'vcodec':'none','acodec':'aac'}]},False),({'formats':[]},False)]
+  for meta,expected in samples:
+   with patch.object(worker.subprocess,'run',return_value=SimpleNamespace(returncode=0,stdout=json.dumps(meta).encode())):self.assertEqual(worker.source_is_silent(d),expected)
+ def test_x_unknown_direct_formats_are_probed_before_accepting_silence(self):
+  from types import SimpleNamespace
+  d={'url':'https://x.com/person/status/123'};meta={'formats':[{'vcodec':'h264','acodec':'none'},{'vcodec':None,'acodec':None,'url':'https://video.twimg.com/example.mp4'}]}
+  video=SimpleNamespace(returncode=0,stdout=json.dumps({'streams':[{'codec_type':'video'}]}).encode())
+  audio=SimpleNamespace(returncode=0,stdout=json.dumps({'streams':[{'codec_type':'video'},{'codec_type':'audio'}]}).encode())
+  for probe,expected in ((video,True),(audio,False)):
+   with patch.object(worker.subprocess,'run',side_effect=[SimpleNamespace(returncode=0,stdout=json.dumps(meta).encode()),probe]):self.assertEqual(worker.source_is_silent(d),expected)
+  meta['formats'][1]['url']='https://127.0.0.1/private'
+  with patch.object(worker.subprocess,'run',return_value=SimpleNamespace(returncode=0,stdout=json.dumps(meta).encode())):self.assertFalse(worker.source_is_silent(d))
+ def test_confirmed_silent_video_is_published_with_warning(self):
+  with tempfile.TemporaryDirectory() as d:
+   root=Path(d);core.STATE=root;worker.STATE=root;worker.OUTPUT=root/'output';db=core.setup()
+   core.handle({'op':'enqueue','jobs':[{'url':'https://example.com/video','captions':False}]},False);r=db.execute('SELECT * FROM jobs').fetchone()
+   def execute(db,id,argv,lockfd,**kwargs):
+    if argv[0]=='yt-dlp':(root/'jobs'/id/'source.mp4').write_bytes(b'fixture')
+    return 0
+   with patch.object(worker,'run',side_effect=execute),patch.object(worker,'source_is_silent',return_value=True),patch.object(worker,'probe',return_value={'streams':[{'codec_type':'video','height':492}]}):worker.process(db,r,1)
+   row=db.execute('SELECT status,message,files FROM jobs').fetchone();self.assertEqual(row['status'],'complete-warning');self.assertIn('no audio',row['message']);self.assertTrue(json.loads(row['files']));db.close()
  def test_quality_limit_rejects_oversize_output(self):
   with tempfile.TemporaryDirectory() as d:
    core.STATE=Path(d);worker.STATE=core.STATE;db=core.setup()

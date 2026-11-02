@@ -23,9 +23,9 @@ Choose **Paste link**, enter a direct MP4, WebM, MP3, M4A or WAV link, and choos
 
 ### Everyday flow
 
-Open the extension on the current lesson page and choose **Download video**. If several players are present, select the intended video. You can also use **Paste link** for one HTTP(S) link. Download settings and Help & setup are available below the main controls. Firefox asks for permission before sending page and candidate media links to the local companion.
+Open the extension on the current lesson page and choose **Download video**. If several players are present, select the intended video. You can also use **Paste link** for one HTTP(S) link. The main popup shows progress and offers **Show in Finder** when a file is saved. Download settings and Help & setup are available below the main controls. Firefox asks for permission before sending page and candidate media links to the local companion.
 
-The companion identifies a matching clear HLS master when the page provides enough evidence. It uses a compatible local engine automatically and can fall back to yt-dlp on a startup or compatibility failure. It does not bypass access, geographic restrictions or protected media. A site can remain unsupported, and an expired signed link may need to be refreshed. An N download can restart segments even when its temporary files are retained.
+The companion identifies a matching clear HLS master when the page provides enough evidence. It uses a compatible local engine automatically and can fall back to yt-dlp on a startup or compatibility failure. It does not bypass access, geographic restrictions or protected media. A site can remain unsupported, and an expired signed link may need to be refreshed. An N download can restart segments even when its temporary files are retained. If an engine cannot report progress, the progress bar is indeterminate. Sources confirmed to have no audio are saved with a warning.
 
 Close the popup or browser: already-started jobs continue locally while the Mac is awake. Reopen to see the durable queue. Pause/cancel retains partial files; Resume/Retry uses the same private job directory. After worker/OS interruption, the next connection marks interrupted jobs paused; explicitly Resume. Sleep suspends execution; this is not a power-management tool.
 
