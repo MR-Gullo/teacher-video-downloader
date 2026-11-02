@@ -1,6 +1,7 @@
 'use strict';
 const api = globalThis.browser || chrome;
 const $ = id => document.getElementById(id);
+const privateMode=Boolean(api.extension?.inIncognitoContext);
 let candidates = [], selected = new Set(), current = null, busy = false, polling = false, connected = false;
 function applyTheme(theme) { document.documentElement.dataset.theme=theme; $('theme').textContent=theme==='dark'?'Light theme':'Dark theme'; $('theme').setAttribute('aria-label',`Switch to ${theme==='dark'?'light':'dark'} theme`); }
 const settingsIds = ['quality','audio','captions','course','copy','engine'];
@@ -24,7 +25,7 @@ function renderCandidates() {
 function updateCount() { const n=candidates.filter(x=>selected.has(x.url)).length;$('selected-count').textContent=`${n} selected`;$('select-all').checked=n>0&&n===candidates.length;$('select-all').indeterminate=n>0&&n<candidates.length; }
 async function loadTabs(initial=false) {
   try {
-    const tabs=await api.tabs.query({currentWindow:true});
+    const tabs=(await api.tabs.query({currentWindow:true})).filter(t=>!t.incognito);
     const active=tabs.find(t=>t.active && /^https?:/.test(t.url || ''));
     current=active || null;
     candidates=[];tabs.filter(t=>/^https?:/.test(t.url || '')).forEach(t=>addCandidate({url:t.url,title:t.title,pageUrl:t.url,kind:t.id===current?.id?'Current page':'Open tab'}));
@@ -54,6 +55,7 @@ async function observe() {
   else {const granted=await api.permissions.request({origins:[origin+'/*']});if(!granted){feedback('Site access was not granted. You can still paste a media URL.');return;}await api.storage.local.set({watched:[...watched,origin].slice(-40)});feedback('Stream detection enabled for this site. Play the video, then Refresh tabs. Cross-origin CDN requests may not be visible without separate permission.');}
   await loadTabs();
 }
+async function requestNativeConsent(){if(!api.runtime.getManifest?.().browser_specific_settings?.gecko)return;const accepted=await api.permissions.request({data_collection:['browsingActivity','websiteContent']});if(!accepted)throw new Error('Local companion access was not granted. Direct file downloads in the browser remain available.');}
 async function native(request) {
   const r=await api.runtime.sendMessage({type:'native',request:{requestId:crypto.randomUUID(),...request}});
   if(!r?.ok)throw new Error(r?.error||'The local companion did not respond.');return r;
@@ -70,14 +72,14 @@ function renderJobs(jobs=[]) {
     if(['queued','running','downloading','retrying','processing'].includes(job.status))ops=['pause','cancel'];
     if(job.status==='paused')ops=['resume','cancel'];
     if(['failed','error','cancelled','interrupted'].includes(job.status))ops=['retry'];
-    for(const op of ops){const b=document.createElement('button');b.textContent=job.engine==='n'&&['resume','retry'].includes(op)?'Restart':op[0].toUpperCase()+op.slice(1);b.setAttribute('aria-label',`${b.textContent} ${title.textContent}`);b.addEventListener('click',async()=>{b.disabled=true;try{const result=await native({op,id:job.id});renderJobs(result.jobs);}catch(e){feedback(e.message);b.disabled=false;}});actions.append(b);}card.append(actions);$('jobs').append(card);
+    for(const op of ops){const b=document.createElement('button');b.textContent=job.engine==='n'&&['resume','retry'].includes(op)?'Restart':op[0].toUpperCase()+op.slice(1);b.setAttribute('aria-label',`${b.textContent} ${title.textContent}`);b.addEventListener('click',async()=>{b.disabled=true;try{if(['resume','retry'].includes(op))await requestNativeConsent();const result=await native({op,id:job.id});renderJobs(result.jobs);}catch(e){feedback(e.message);b.disabled=false;}});actions.append(b);}card.append(actions);$('jobs').append(card);
   }
 }
 async function refreshStatus(){if(polling)return;polling=true;try{const r=await native({op:'status'});connected=true;$('connection').className='notice connected';$('connection').textContent='Companion connected · Downloads stay on this computer';renderJobs(r.jobs);}catch(e){connected=false;$('connection').className='notice';$('connection').textContent=e.message;}finally{polling=false;}}
 function settings(){return {quality:$('quality').value,audio:$('audio').value==='audio',captions:$('captions').value==='english',course:$('course').value.trim(),copy:$('copy').value,engine:$('engine').value};}
 function hints(){$('copy-hint').textContent=$('audio').value==='audio'?'Audio-only output; extra video copy settings do not apply.':$('copy').value==='av1'?'Keeps the original. AV1 is less compatible; only retain a validated copy if at least 15% smaller.':$('copy').value==='none'?'Preserves the downloaded source without an additional video encode.':'Keeps the original. Makes a compatible projector copy; encoding takes time.';$('engine-hint').textContent=$('engine').value==='n'?'Advanced: use a direct HLS (.m3u8) or DASH (.mpd) manifest, not a page. N keeps temporary data, but cross-process resume is not guaranteed; Retry may re-download segments.':'yt-dlp preserves partial files and retries interrupted downloads. Signed links may expire and need refreshing.';}
 async function enqueue(){if(busy)return;feedback('');let jobs;try{const opts=settings();if(opts.course&&(/[\\/]|^\.{1,2}$/.test(opts.course)))throw new Error('Use a course name without slashes or path traversal.');const items=candidates.filter(x=>selected.has(x.url));for(const url of parseInput($('urls').value))if(!items.some(x=>x.url===url))items.push({url,title:'',pageUrl:''});if(!items.length)throw new Error('Select a page or media link, or paste a URL first.');if(items.length>50)throw new Error('Please queue at most 50 links at a time.');if(opts.engine==='n'&&items.some(x=>!/\.(m3u8|mpd)(?:[?#]|$)/i.test(x.url)))throw new Error('N_m3u8DL-RE needs direct .m3u8 or .mpd manifest URLs. Deselect page URLs or use yt-dlp.');jobs=items.map(x=>({...x,...opts}));}catch(e){feedback(e.message);return;}
-  busy=true;$('download').disabled=true;$('download').textContent='Adding to your local queue…';try{const r=await native({op:'enqueue',jobs});renderJobs(r.jobs);feedback('Added to your local queue. Duplicate jobs are not started twice.');$('urls').value='';}catch(e){feedback(e.message);}finally{busy=false;$('download').disabled=false;$('download').textContent='Download selected';}
+  busy=true;$('download').disabled=true;$('download').textContent='Adding to your local queue…';try{await requestNativeConsent();const r=await native({op:'enqueue',jobs});renderJobs(r.jobs);feedback('Added to your local queue. Duplicate jobs are not started twice.');$('urls').value='';}catch(e){feedback(e.message);}finally{busy=false;$('download').disabled=false;$('download').textContent='Download selected';}
 }
 async function downloadDirect(){
   feedback('');const button=$('direct-download');let urls;
@@ -92,6 +94,6 @@ async function downloadDirect(){
 }
 $('direct-download').addEventListener('click',downloadDirect);
 $('theme').addEventListener('click',async()=>{const theme=document.documentElement.dataset.theme==='dark'?'light':'dark';applyTheme(theme);await api.storage.local.set({theme});});
-$('refresh').addEventListener('click',()=>loadTabs());$('scan').addEventListener('click',scan);$('observe').addEventListener('click',()=>observe().catch(e=>feedback(e.message)));$('select-all').addEventListener('change',e=>{selected=e.target.checked?new Set(candidates.map(x=>x.url)):new Set();renderCandidates();});$('clear').addEventListener('click',()=>{selected.clear();renderCandidates();});$('download').addEventListener('click',enqueue);$('reconnect').addEventListener('click',refreshStatus);$('expand').addEventListener('click',()=>api.tabs.create({url:api.runtime.getURL('popup.html')}));$('doctor').addEventListener('click',async()=>{try{$('doctor-result').textContent='Checking…';const r=await native({op:'doctor'});$('doctor-result').textContent=JSON.stringify(r.doctor||r,null,2);}catch(e){$('doctor-result').textContent=e.message;}});
+$('refresh').addEventListener('click',()=>loadTabs());$('scan').addEventListener('click',scan);$('observe').addEventListener('click',()=>observe().catch(e=>feedback(e.message)));$('select-all').addEventListener('change',e=>{selected=e.target.checked?new Set(candidates.map(x=>x.url)):new Set();renderCandidates();});$('clear').addEventListener('click',()=>{selected.clear();renderCandidates();});$('download').addEventListener('click',enqueue);$('reconnect').addEventListener('click',async()=>{try{await requestNativeConsent();await refreshStatus();}catch(e){feedback(e.message);}});$('expand').addEventListener('click',()=>api.tabs.create({url:api.runtime.getURL('popup.html')}));$('doctor').addEventListener('click',async()=>{try{$('doctor-result').textContent='Checking…';await requestNativeConsent();const r=await native({op:'doctor'});$('doctor-result').textContent=JSON.stringify(r.doctor||r,null,2);}catch(e){$('doctor-result').textContent=e.message;}});
 for(const id of settingsIds)$(id).addEventListener('change',async()=>{hints();const saved={};for(const key of settingsIds)saved[key]=$(key).value;await api.storage.local.set({settings:saved});});
-(async()=>{const {theme='light'}=await api.storage.local.get('theme');applyTheme(theme);const {settings:saved={}}=await api.storage.local.get('settings');for(const id of settingsIds)if(saved[id]!==undefined)$(id).value=saved[id];hints();await loadTabs(true);await refreshStatus();setInterval(refreshStatus,2000);})();
+(async()=>{if(privateMode){for(const child of document.querySelector('main').children)if(child.id!=='connection'&&!child.classList.contains('privacy'))child.hidden=true;$('connection').textContent='LessonShelf is unavailable in private browsing. Open a regular window to use it.';return;}const {theme='light'}=await api.storage.local.get('theme');applyTheme(theme);const {settings:saved={}}=await api.storage.local.get('settings');for(const id of settingsIds)if(saved[id]!==undefined)$(id).value=saved[id];hints();await loadTabs(true);await refreshStatus();setInterval(refreshStatus,2000);})();

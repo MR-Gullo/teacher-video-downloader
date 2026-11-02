@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "LessonShelf \u00b7 Local Video",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A private, local download queue for classroom videos you have permission to save.",
   "permissions": [
     "activeTab",
@@ -34,12 +34,17 @@
   "browser_specific_settings": {
     "gecko": {
       "id": "teacher-video-downloader@local.invalid",
-      "strict_min_version": "128.0",
+      "strict_min_version": "140.0",
       "data_collection_permissions": {
         "required": [
           "none"
+        ],
+        "optional": [
+          "browsingActivity",
+          "websiteContent"
         ]
-      }
+      },
+      "update_url": "https://mr-gullo.github.io/teacher-video-downloader/updates/firefox.json"
     }
   },
   "content_security_policy": {
