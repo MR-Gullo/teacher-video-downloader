@@ -130,7 +130,7 @@ def output_setting(app, default):
 def registration_owned(data, app):
     try:
         old = json.loads(data)
-        return old.get('name') == HOST and old.get('path') in (str(app / 'launch-host'), str(app / 'launch-host.exe'))
+        return old.get('name') == HOST and old.get('path') in (str(app / 'launch-host'), str(app / 'launch-host.exe'), str(app / 'LessonShelf Companion.app/Contents/MacOS/LessonShelfHost'))
     except (ValueError, TypeError):
         return False
 
@@ -157,12 +157,35 @@ def registry_write(value):
             winreg.SetValueEx(key, '', 0, value[1], value[0])
 
 
-def install(payload, account, *, staging=False, dry_run=False, target=None):
+def bundle_digest(bundle):
+    digest_object = hashlib.sha256()
+    for path in sorted(bundle.rglob('*')):
+        if path.is_symlink():
+            raise ValueError('Companion bundle contains a symbolic link')
+        if path.is_file():
+            digest_object.update(path.relative_to(bundle).as_posix().encode())
+            digest_object.update(bytes.fromhex(digest(path)))
+    return digest_object.hexdigest()
+
+
+def check_bundle(bundle):
+    no_links(bundle)
+    subprocess.run(['/usr/bin/codesign', '--verify', '--deep', '--strict', str(bundle)], check=True, capture_output=True)
+
+
+def install(payload, account, *, staging=False, dry_run=False, target=None, companion_app=None):
     payload, account = Path(payload).absolute(), Path(account).absolute()
     spec = validate(payload, target)
     windows = spec['target'] == 'windows-x64'
     if spec.get('prototype') and not staging:
         raise ValueError('Test payloads can install only into a separate staging directory')
+    if companion_app is not None:
+        companion_app = Path(companion_app).absolute()
+        if windows or companion_app / 'Contents/Resources/payload' != payload:
+            raise ValueError('Companion app and payload paths do not match')
+        check_bundle(companion_app)
+    elif not windows and not staging:
+        raise ValueError('A sealed companion app is required for a real Mac installation')
     if staging and account in (Path.home(), Path(account.anchor)):
         raise ValueError('Use a separate staging directory')
     no_links(account)
@@ -196,30 +219,50 @@ def install(payload, account, *, staging=False, dry_run=False, target=None):
             if windows and not staging and registry_read() != old_registry:
                 raise ValueError('Windows registration changed during installation. Try again')
             staged = lock / 'app'
-            shutil.copytree(payload, staged)
-            validate(staged, spec['target'])
+            if companion_app is not None:
+                staged.mkdir()
+                staged_bundle = staged / 'LessonShelf Companion.app'
+                shutil.copytree(companion_app, staged_bundle)
+                staged_payload = staged_bundle / 'Contents/Resources/payload'
+                check_bundle(staged_bundle)
+                incoming_bundle_sha = bundle_digest(companion_app)
+                if bundle_digest(staged_bundle) != incoming_bundle_sha:
+                    raise ValueError('Companion bundle changed during copying')
+                installed_payload = app / 'LessonShelf Companion.app/Contents/Resources/payload'
+            else:
+                shutil.copytree(payload, staged)
+                staged_payload = staged
+                installed_payload = app
+                incoming_bundle_sha = None
+            validate(staged_payload, spec['target'])
             installed_record = app / '.installation.json'
             if installed_record.exists() and json.loads(installed_record.read_text()).get('payloadSHA256') == digest(payload / 'payload.json'):
-                if all((app / name).is_file() and digest(app / name) == expected for name, expected in spec['files'].items()):
+                bundle_matches = companion_app is None or (app / 'LessonShelf Companion.app').is_dir() and bundle_digest(app / 'LessonShelf Companion.app') == incoming_bundle_sha
+                if bundle_matches and all((installed_payload / name).is_file() and digest(installed_payload / name) == expected for name, expected in spec['files'].items()):
                     if old_manifest is not None and json.loads(old_manifest).get('allowed_extensions') == [spec['firefoxID']] and (not windows or staging or old_registry is not None):
                         return {'ok': True, 'changed': False, 'version': spec['version'], 'destination': str(base)}
             output = output_setting(app, account / 'Downloads/youtube-downloads')
-            record = {'schema': 1, 'version': spec['version'], 'outputDir': output, 'payloadSHA256': digest(payload / 'payload.json')}
+            record = {'schema': 1, 'version': spec['version'], 'outputDir': output, 'payloadSHA256': digest(payload / 'payload.json'), 'companionBundleSHA256': incoming_bundle_sha}
             (staged / '.installation.json').write_text(json.dumps(record, indent=2) + '\n')
-            python = app / ('runtime/python.exe' if windows else 'runtime/bin/python3')
-            source = app / 'companion'
-            bootstrap = 'import runpy,sys;sys.path.insert(0,' + repr(str(source)) + ');runpy.run_path(' + repr(str(source / 'host.py')) + ',run_name="__main__")'
-            if windows:
-                launcher = app / 'launch-host.exe'
-                shutil.copyfile(staged / 'installer/launch-host.exe', staged / launcher.name)
-                (staged / 'installer/run_host.py').write_text(bootstrap + '\n', encoding='utf-8')
-                text = None
+            if companion_app is not None:
+                # Everything inside the signed/stapled app remains byte-for-byte unchanged.
+                launcher = app / 'LessonShelf Companion.app/Contents/MacOS/LessonShelfHost'
             else:
-                launcher = app / 'launch-host'
-                text = '#!/bin/sh\numask 077\nexport PATH=' + shlex.quote(str(app / 'tools') + ':/usr/bin:/bin') + '\nexport PYTHONNOUSERSITE=1\nexport PYTHONDONTWRITEBYTECODE=1\nunset PYTHONPATH PYTHONHOME\nexport TVD_STATE_DIR=' + shlex.quote(str(base)) + '\nexport YTDL_OUTPUT_DIR=' + shlex.quote(output) + '\nexec ' + shlex.quote(str(python)) + ' -B -I -c ' + shlex.quote(bootstrap) + ' "$@"\n'
-            if text is not None:
-                (staged / launcher.name).write_text(text)
-            (staged / launcher.name).chmod(0o700)
+                python = app / ('runtime/python.exe' if windows else 'runtime/bin/python3')
+                source = app / 'companion'
+                bootstrap = 'import runpy,sys;sys.path.insert(0,' + repr(str(source)) + ');runpy.run_path(' + repr(str(source / 'host.py')) + ',run_name="__main__")'
+                if windows:
+                    launcher = app / 'launch-host.exe'
+                    shutil.copyfile(staged / 'installer/launch-host.exe', staged / launcher.name)
+                    (staged / 'installer/run_host.py').write_text(bootstrap + '\n', encoding='utf-8')
+                    text = None
+                else:
+                    # Raw-payload mode is limited to developer staging tests.
+                    launcher = app / 'launch-host'
+                    text = '#!/bin/sh\numask 077\nexport PATH=' + shlex.quote(str(app / 'tools') + ':/usr/bin:/bin') + '\nexport PYTHONNOUSERSITE=1\nexport PYTHONDONTWRITEBYTECODE=1\nunset PYTHONPATH PYTHONHOME\nexport TVD_STATE_DIR=' + shlex.quote(str(base)) + '\nexport YTDL_OUTPUT_DIR=' + shlex.quote(output) + '\nexec ' + shlex.quote(str(python)) + ' -B -I -c ' + shlex.quote(bootstrap) + ' "$@"\n'
+                if text is not None:
+                    (staged / launcher.name).write_text(text)
+                (staged / launcher.name).chmod(0o700)
             registration = json.dumps({'name': HOST, 'description': 'LessonShelf local companion', 'type': 'stdio', 'path': str(launcher), 'allowed_extensions': [spec['firefoxID']]}, indent=2).encode()
             rollback = None
             moved_old = False
@@ -275,6 +318,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--payload', required=True, type=Path)
     parser.add_argument('--stage-root', type=Path)
+    parser.add_argument('--companion-app', type=Path)
     parser.add_argument('--dry-run', action='store_true')
     parser.add_argument('--install', action='store_true', help='Explicit GUI-approved install for this account')
     args = parser.parse_args()
@@ -285,7 +329,7 @@ def main():
         if architecture != 'AMD64':
             parser.error('This installer supports Windows x64. ARM64 and 32-bit Windows are not supported')
     try:
-        result = install(args.payload, args.stage_root or Path.home(), staging=bool(args.stage_root), dry_run=args.dry_run)
+        result = install(args.payload, args.stage_root or Path.home(), staging=bool(args.stage_root), dry_run=args.dry_run, companion_app=args.companion_app)
         print(json.dumps(result))
     except Exception as error:
         print(str(error), file=sys.stderr)

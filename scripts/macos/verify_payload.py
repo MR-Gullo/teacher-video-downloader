@@ -9,19 +9,21 @@ import platform
 import struct
 import subprocess
 import tempfile
-from install_payload import digest, install, validate
+from install_payload import digest, install, validate, check_bundle, bundle_digest
 
 
-def verify(payload, work, report):
+def verify(payload, work, report, companion_app=None):
     spec = validate(payload)
     windows = os.name == 'nt'
     work.mkdir(parents=True, exist_ok=True)
     account = work / 'Test teacher account'
-    result = install(payload, account, staging=True)
-    base = Path(result['destination']); app = base / 'app'; tools = app / 'tools'
+    result = install(payload, account, staging=True, companion_app=companion_app)
+    base = Path(result['destination']); app = base / 'app'
+    installed_payload = app / 'LessonShelf Companion.app/Contents/Resources/payload' if companion_app else app
+    tools = installed_payload / 'tools'
     env = dict(os.environ, PATH=str(tools) + os.pathsep + os.environ.get('PATH', ''), PYTHONDONTWRITEBYTECODE='1')
     ext = '.exe' if windows else ''
-    commands = [('python', [str(app / ('runtime/python.exe' if windows else 'runtime/bin/python3')), '-B', '-I', '-c', 'import sqlite3,ssl,sys;print(sys.version);print(sqlite3.sqlite_version);print(ssl.OPENSSL_VERSION)']),
+    commands = [('python', [str(installed_payload / ('runtime/python.exe' if windows else 'runtime/bin/python3')), '-B', '-I', '-c', 'import sqlite3,ssl,sys;print(sys.version);print(sqlite3.sqlite_version);print(ssl.OPENSSL_VERSION)']),
                 ('yt-dlp', [str(tools / ('yt-dlp' + ext)), '--version']),
                 ('ffmpeg', [str(tools / ('ffmpeg' + ext)), '-version']),
                 ('ffprobe', [str(tools / ('ffprobe' + ext)), '-version']),
@@ -40,7 +42,7 @@ def verify(payload, work, report):
         raise RuntimeError('Bundled N_m3u8DL-RE lacks required engine controls')
     evidence['N_m3u8DL-RE']['capabilities'] = {flag: flag in n_help for flag in (*required, '--no-config', '--vod-select-parts', '-ds')}
     message = json.dumps({'op': 'doctor'}).encode()
-    launcher = app / ('launch-host.exe' if windows else 'launch-host')
+    launcher = app / 'LessonShelf Companion.app/Contents/MacOS/LessonShelfHost' if companion_app else app / ('launch-host.exe' if windows else 'launch-host')
     child = subprocess.run([str(launcher)], input=struct.pack('=I', len(message)) + message, capture_output=True, env=env, timeout=60)
     if child.returncode or len(child.stdout) < 4:
         raise RuntimeError('Native launcher failed: ' + child.stderr.decode(errors='replace')[:2000])
@@ -65,7 +67,12 @@ def verify(payload, work, report):
         raise RuntimeError('Synthetic MP4 lacks AAC audio')
     subprocess.run([ffmpeg, '-nostdin', '-v', 'error', '-xerror', '-i', str(output), '-f', 'null', '-'], env=env, check=True, timeout=60)
     validate(payload)  # Tool checks must not mutate the payload being packaged.
-    evidence.update({'schema': 1, 'target': spec['target'], 'host': platform.platform(), 'generatedAt': datetime.now(timezone.utc).isoformat(),
+    if companion_app:
+        installed_bundle = app / 'LessonShelf Companion.app'
+        check_bundle(installed_bundle)
+        if bundle_digest(installed_bundle) != bundle_digest(companion_app):
+            raise RuntimeError('Installed sealed companion changed')
+    evidence.update({'installedSealedBundleUnchanged': True if companion_app else None, 'schema': 1, 'target': spec['target'], 'host': platform.platform(), 'generatedAt': datetime.now(timezone.utc).isoformat(),
                      'payloadSHA256': digest(payload / 'payload.json'), 'nativeDoctor': doctor, 'syntheticMP4': probe,
                      'syntheticSHA256': digest(output), 'ok': not errors, 'errors': errors, 'browserVerified': False, 'gatekeeperOrSmartScreenVerified': False})
     report.parent.mkdir(parents=True, exist_ok=True)
@@ -77,8 +84,12 @@ def verify(payload, work, report):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--payload', type=Path, required=True)
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('--payload', type=Path)
+    group.add_argument('--companion-app', type=Path)
     parser.add_argument('--work', type=Path, required=True)
     parser.add_argument('--report', type=Path, required=True)
     args = parser.parse_args()
-    verify(args.payload.resolve(), args.work.resolve(), args.report.resolve())
+    companion = args.companion_app.resolve() if args.companion_app else None
+    payload = companion / 'Contents/Resources/payload' if companion else args.payload.resolve()
+    verify(payload, args.work.resolve(), args.report.resolve(), companion)

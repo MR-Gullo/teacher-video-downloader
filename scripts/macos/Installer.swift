@@ -69,13 +69,24 @@ func validate(_ directory: URL) throws -> Payload {
     }
     return payload
 }
-func install(payload: URL, userRoot: URL, dryRun: Bool, staging: Bool) throws -> String {
+func install(payload: URL, userRoot: URL, dryRun: Bool, staging: Bool, companion: URL? = nil) throws -> String {
+    if let companion = companion {
+        let check = Process()
+        check.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+        check.arguments = ["--verify", "--deep", "--strict", companion.path]
+        let errors = Pipe(); check.standardError = errors
+        try check.run()
+        _ = errors.fileHandleForReading.readDataToEndOfFile()
+        check.waitUntilExit()
+        guard check.terminationStatus == 0 else { try fail("The companion signature check failed. Download the installer again.") }
+    }
     let spec = try validate(payload)
     guard staging || !spec.prototype else { try fail("This is a test-only payload. It can install only into an explicit staging directory.") }
     try noLinks(userRoot)
     let process = Process()
     process.executableURL = payload.appendingPathComponent("runtime/bin/python3")
     process.arguments = ["-B", "-I", payload.appendingPathComponent("installer/install_payload.py").path, "--payload", payload.path]
+    if let companion = companion { process.arguments! += ["--companion-app", companion.path] }
     if staging { process.arguments! += ["--stage-root", userRoot.path] } else { process.arguments! += ["--install"] }
     if dryRun { process.arguments!.append("--dry-run") }
     let stdout = Pipe(), stderr = Pipe()
@@ -90,12 +101,19 @@ func install(payload: URL, userRoot: URL, dryRun: Bool, staging: Bool) throws ->
 
 func runCLI() throws {
     let args = Array(CommandLine.arguments.dropFirst())
-    guard args.count == 4 || args.count == 5, args[0] == "--payload", args[2] == "--stage-root", args.count == 4 || args[4] == "--dry-run" else { try fail("Usage: installer --payload DIRECTORY --stage-root EMPTY_TEST_ROOT [--dry-run]") }
+    guard args.count == 4 || args.count == 5, ["--payload", "--companion-app"].contains(args[0]), args[2] == "--stage-root", args.count == 4 || args[4] == "--dry-run" else { try fail("Usage: installer --companion-app APP --stage-root EMPTY_TEST_ROOT [--dry-run]") }
     let root = URL(fileURLWithPath: args[3]).standardizedFileURL
     guard root.path != "/", root.path != fm.homeDirectoryForCurrentUser.path else { try fail("Staging requires a separate test directory.") }
-    print(try install(payload: URL(fileURLWithPath: args[1]), userRoot: root, dryRun: args.contains("--dry-run"), staging: true))
+    let companion = args[0] == "--companion-app" ? URL(fileURLWithPath: args[1]) : nil
+    let payload = companion?.appendingPathComponent("Contents/Resources/payload") ?? URL(fileURLWithPath: args[1])
+    print(try install(payload: payload, userRoot: root, dryRun: args.contains("--dry-run"), staging: true, companion: companion))
 }
-if CommandLine.arguments.count > 1 {
+let uiArguments = Array(CommandLine.arguments.dropFirst())
+let stagingUIRoot: URL? = uiArguments.count == 3 && uiArguments[0] == "--stage-ui" && uiArguments[1] == "--stage-root" ? URL(fileURLWithPath: uiArguments[2]).standardizedFileURL : nil
+if let root = stagingUIRoot, root.path == "/" || root.path == fm.homeDirectoryForCurrentUser.path {
+    fputs("Use a separate staging directory.\n", stderr); exit(1)
+}
+if CommandLine.arguments.count > 1 && stagingUIRoot == nil {
     do { try runCLI() } catch { fputs("\(error.localizedDescription)\n", stderr); exit(1) }
 } else {
     final class InstallerWindow: NSObject {
@@ -107,7 +125,8 @@ if CommandLine.arguments.count > 1 {
         var finished = false
         override init() {
             super.init()
-            window.title = "Install LessonShelf companion"
+            window.title = stagingUIRoot == nil ? "Install LessonShelf companion" : "LessonShelf installer staging test"
+            if let root = stagingUIRoot { status.stringValue = "Local staging test. Destination: " + root.path }
             window.isReleasedWhenClosed = false
             window.backgroundColor = NSColor(red: 37/255, green: 36/255, blue: 34/255, alpha: 1)
             let title = NSTextField(labelWithString: "LessonShelf companion")
@@ -146,8 +165,9 @@ if CommandLine.arguments.count > 1 {
                 var message: String
                 var success = false
                 do {
-                    guard let resources = Bundle.main.resourceURL else { try fail("Installer resources are missing.") }
-                    message = try install(payload: resources.appendingPathComponent("payload"), userRoot: fm.homeDirectoryForCurrentUser, dryRun: false, staging: false)
+                    let companion = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/LessonShelf Companion.app")
+                    message = try install(payload: companion.appendingPathComponent("Contents/Resources/payload"), userRoot: stagingUIRoot ?? fm.homeDirectoryForCurrentUser, dryRun: false, staging: stagingUIRoot != nil, companion: companion)
+                    if stagingUIRoot != nil { message = "Staging installation complete. The live companion was not changed." }
                     success = true
                 } catch { message = error.localizedDescription }
                 DispatchQueue.main.async {

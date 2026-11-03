@@ -13,7 +13,7 @@ import sys
 import shutil
 import subprocess
 import tempfile
-from install_payload import validate
+from install_payload import validate, check_bundle, bundle_digest
 
 
 def validate_architecture(payload, architecture):
@@ -31,7 +31,7 @@ def validate_architecture(payload, architecture):
                 raise ValueError(f'Wrong architecture: {path.relative_to(payload)}')
 
 
-def build(payload, output):
+def build(payload, output, companion_app=None, allow_unnotarized_test=False):
     payload, output = payload.resolve(), output.absolute()
     if output.exists() or output.is_symlink():
         raise ValueError('Refusing to replace an existing output')
@@ -41,6 +41,15 @@ def build(payload, output):
         raise ValueError('Output must be outside the payload')
     spec = json.loads((payload / 'payload.json').read_text())
     validate(payload, spec['target'])
+    if companion_app is not None:
+        companion_app = companion_app.resolve()
+        if companion_app / 'Contents/Resources/payload' != payload:
+            raise ValueError('The companion and payload paths do not match')
+        check_bundle(companion_app)
+        if not allow_unnotarized_test:
+            subprocess.run(['xcrun', 'stapler', 'validate', str(companion_app)], check=True, capture_output=True)
+    elif not spec['prototype']:
+        raise ValueError('Production Mac installers require a signed and notarized companion app')
     architecture = 'arm64' if spec['target'] == 'macos-arm64' else 'x86_64'
     if spec['target'] not in ('macos-arm64', 'macos-x64'):
         raise ValueError('Use the Windows builder for Windows payloads')
@@ -56,13 +65,21 @@ def build(payload, output):
         executable.parent.mkdir(parents=True)
         resources = contents / 'Resources'
         resources.mkdir()
-        shutil.copytree(payload, resources / 'payload')
+        if companion_app is not None:
+            packaged_companion = contents / 'Helpers/LessonShelf Companion.app'
+            packaged_companion.parent.mkdir()
+            shutil.copytree(companion_app, packaged_companion)
+            packaged_payload = packaged_companion / 'Contents/Resources/payload'
+        else:
+            packaged_companion = None
+            shutil.copytree(payload, resources / 'payload')
+            packaged_payload = resources / 'payload'
         subprocess.run(['xcrun', 'swiftc', '-target', architecture + '-apple-macosx12.0',
                         '-module-cache-path', str(temporary / 'module-cache'),
                         str(Path(__file__).with_name('Installer.swift')), '-o', str(executable)], check=True)
         # Use the same verifier as installation, against the copied payload.
         if architecture == platform.machine():
-            subprocess.run([str(executable), '--payload', str(resources / 'payload'),
+            subprocess.run([str(executable), '--companion-app' if packaged_companion else '--payload', str(packaged_companion or packaged_payload),
                             '--stage-root', str(temporary / 'test-account'), '--dry-run'], check=True)
         with (contents / 'Info.plist').open('wb') as stream:
             plistlib.dump(dict(CFBundleIdentifier='org.lessonshelf.installer',
@@ -74,22 +91,27 @@ def build(payload, output):
         # Hashes are local review evidence, not a publisher signature.
         digest = hashlib.sha256(executable.read_bytes()).hexdigest()
         (resources / 'BUILD.json').write_text(json.dumps(dict(architecture=architecture, executableSHA256=digest,
-            signedForDistribution=False, notarized=False, macNativeDryRun=architecture == platform.machine(),
+            component='installer', companionBundleSHA256=bundle_digest(packaged_companion) if packaged_companion else None,
+            embeddedCompanionNotarizationRequired=not allow_unnotarized_test, signedForDistribution=False, notarized=False, macNativeDryRun=architecture == platform.machine(),
             generatedAt=datetime.now(timezone.utc).isoformat(), purpose='Local staging review only',
             sourceProject=Path(__file__).resolve().parents[2].name,
             sourceCommit=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=Path(__file__).parent, text=True).strip(),
             sourceDirty=subprocess.check_output(['git', 'status', '--porcelain'], cwd=Path(__file__).parent, text=True).splitlines(),
-            payloadManifestSHA256=hashlib.sha256((resources / 'payload/payload.json').read_bytes()).hexdigest()), indent=2) + '\n')
+            payloadManifestSHA256=hashlib.sha256((packaged_payload / 'payload.json').read_bytes()).hexdigest()), indent=2) + '\n')
         os.rename(app, output)
     return output
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--payload', type=Path, required=True)
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('--payload', type=Path, help='Test fixtures only')
+    group.add_argument('--companion-app', type=Path)
+    parser.add_argument('--allow-unnotarized-test', action='store_true', help='Local test candidate only; cannot be signed for distribution')
     parser.add_argument('--output', required=True, type=Path)
     args = parser.parse_args()
     try:
-        print(build(args.payload, args.output))
+        payload = args.companion_app.resolve() / 'Contents/Resources/payload' if args.companion_app else args.payload
+        print(build(payload, args.output, args.companion_app, args.allow_unnotarized_test))
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
         parser.exit(1, f'Build stopped: {error}\n')

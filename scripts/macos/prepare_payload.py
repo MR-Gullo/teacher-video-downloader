@@ -108,6 +108,7 @@ def assemble(target, version, firefox_id, cache, output, ffmpeg_build=None, wind
         if windows:
             shutil.copyfile(windows_launcher, installer / 'launch-host.exe')
         else:
+            shutil.copyfile(Path(__file__).with_name('run_host.py'), installer / 'run_host.py')
             for path in tools.iterdir(): path.chmod(0o755)
         (payload / 'LICENSES.txt').write_text('LessonShelf bundles CPython from Astral Python Build Standalone, yt-dlp, FFmpeg/ffprobe and N_m3u8DL-RE.\nSee licenses/, the Python runtime LICENSE.txt, PROVENANCE.json and sources/ where present.\nWindows FFmpeg uses upstream yt-dlp FFmpeg-Builds. Its complete corresponding-source distribution must be reviewed before public release.\n')
         provenance = {'toolSourceSHA256': {path.name: sha(path) for path in tools.iterdir() if path.is_file()}, 'generatedAt': datetime.now(timezone.utc).isoformat(), 'target': target, 'dependencies': {key: lock[key] for key in keys},

@@ -232,4 +232,96 @@ class WindowsPackagingTests(unittest.TestCase):
                 module.validate_windows_payload(payload)
 
 
+@unittest.skipUnless(sys.platform == 'darwin', 'Sealed Mac companion')
+class SealedMacTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        import build_companion
+        import sign_installer
+        SCRATCH.mkdir(parents=True, exist_ok=True)
+        cls.temporary = tempfile.TemporaryDirectory(dir=SCRATCH)
+        cls.root = Path(cls.temporary.name).resolve()
+        payload = cls.root / 'payload'; spec = fixture(payload)
+        shutil.copyfile(SCRIPTS / 'run_host.py', payload / 'installer/run_host.py')
+        provenance = {'sourceCommit': 'a' * 40, 'sourceDirty': [], 'toolSourceSHA256': {p.name: backend.digest(p) for p in (payload / 'tools').iterdir()}}
+        (payload / 'PROVENANCE.json').write_text(json.dumps(provenance))
+        spec['files'] = {p.relative_to(payload).as_posix(): backend.digest(p) for p in payload.rglob('*') if p.is_file() and p.name != 'payload.json'}
+        (payload / 'payload.json').write_text(json.dumps(spec))
+        unsigned = cls.root / 'unsigned.app'
+        build_companion.build(payload, unsigned)
+        cls.bundle = cls.root / 'signed.app'
+        sign_installer.sign(unsigned, cls.bundle, 'a' * 40, adhoc_test=True)
+        cls.payload = cls.bundle / 'Contents/Resources/payload'
+
+    @classmethod
+    def tearDownClass(cls): cls.temporary.cleanup()
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(dir=self.root)
+        self.addCleanup(self.temp.cleanup)
+        self.account = Path(self.temp.name) / "Teacher's account"
+
+    def install(self):
+        return backend.install(self.payload, self.account, staging=True, companion_app=self.bundle)
+
+    def test_install_and_native_launch_preserve_seal(self):
+        result = self.install()
+        app = Path(result['destination']) / 'app'
+        installed = app / 'LessonShelf Companion.app'
+        self.assertEqual(backend.bundle_digest(self.bundle), backend.bundle_digest(installed))
+        message = json.dumps({'op': 'doctor'}).encode()
+        process = subprocess.run([str(installed / 'Contents/MacOS/LessonShelfHost')], input=struct.pack('=I', len(message)) + message, capture_output=True, timeout=30)
+        self.assertEqual(process.returncode, 0, process.stderr)
+        self.assertTrue(json.loads(process.stdout[4:])['ok'])
+        backend.check_bundle(installed)
+        self.assertEqual(backend.bundle_digest(self.bundle), backend.bundle_digest(installed))
+        self.assertFalse(self.install()['changed'])
+        self.assertTrue((app / '.installation.json').is_file())
+        self.assertFalse((installed / '.installation.json').exists())
+
+    def test_tampered_bundle_refused(self):
+        altered = Path(self.temp.name) / 'altered.app'
+        shutil.copytree(self.bundle, altered)
+        (altered / 'Contents/Resources/payload/LICENSES.txt').write_text('changed')
+        with self.assertRaises((ValueError, subprocess.CalledProcessError)):
+            backend.install(altered / 'Contents/Resources/payload', self.account, staging=True, companion_app=altered)
+        self.assertFalse(self.account.exists())
+
+    def test_upgrade_to_sealed_layout_keeps_queue(self):
+        base = self.account / 'Library/Application Support/Teacher Video Downloader'
+        old = base / 'app'; old.mkdir(parents=True)
+        (old / 'sentinel').write_text('old app')
+        (base / 'queue.sqlite').write_bytes(b'queue evidence')
+        manifest = self.account / 'Library/Application Support/Mozilla/NativeMessagingHosts' / (backend.HOST + '.json')
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text(json.dumps({'name': backend.HOST, 'path': str(old / 'launch-host')}))
+        result = self.install()
+        self.assertEqual((base / 'queue.sqlite').read_bytes(), b'queue evidence')
+        self.assertEqual((Path(result['rollbackApp']) / 'sentinel').read_text(), 'old app')
+        self.assertIn('LessonShelf Companion.app', json.loads(manifest.read_text())['path'])
+
+    def test_outer_signing_keeps_embedded_companion_intact(self):
+        import sign_installer
+        import notarize_app
+        output = Path(self.temp.name) / 'Installer.app'
+        builder.build(self.payload, output, self.bundle, allow_unnotarized_test=True)
+        build_path = output / 'Contents/Resources/BUILD.json'
+        record = json.loads(build_path.read_text())
+        # This isolated fixture has a synthetic review identity, never a release identity.
+        record.update(sourceCommit='a' * 40, sourceDirty=[])
+        build_path.write_text(json.dumps(record))
+        signed = Path(self.temp.name) / 'SignedInstaller.app'
+        result = sign_installer.sign(output, signed, 'a' * 40, adhoc_test=True)
+        self.assertEqual(result['codeObjectCount'], 1)
+        self.assertTrue(result['embeddedCompanionUnchanged'])
+        protected = subprocess.run([str(signed / 'Contents/MacOS/LessonShelfInstaller'), '--stage-ui', '--stage-root', str(Path.home())], capture_output=True, text=True)
+        self.assertNotEqual(protected.returncode, 0)
+        self.assertIn('separate staging', protected.stderr)
+        self.assertEqual(backend.bundle_digest(self.bundle), backend.bundle_digest(signed / 'Contents/Helpers/LessonShelf Companion.app'))
+        plan = notarize_app.notarize(signed, Path(self.temp.name) / 'Notarized.app', 'a' * 40)
+        self.assertFalse(plan['eligibleForSubmission'])
+        with self.assertRaisesRegex(ValueError, 'Developer ID'):
+            notarize_app.notarize(signed, Path(self.temp.name) / 'Notarized.app', 'a' * 40, 'fake-profile', submit=True)
+
+
 if __name__ == '__main__': unittest.main()
