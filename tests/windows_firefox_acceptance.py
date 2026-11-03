@@ -11,6 +11,7 @@ import contextlib
 import http.server
 import json
 import os
+import queue
 from pathlib import Path
 import subprocess
 import sys
@@ -22,6 +23,57 @@ import zipfile
 HOST = 'org.teacher.video_downloader'
 EXTENSION_ID = 'teacher-video-downloader@local.invalid'
 KEY = r'Software\Mozilla\NativeMessagingHosts' + chr(92) + HOST
+
+
+def check_worker_crash_isolation(runtime, companion, root):
+    """Prove a killed Windows worker cannot leave its child process alive."""
+    import ctypes
+    from ctypes import wintypes
+    state=root/'worker-isolation';state.mkdir()
+    script=root/'worker-isolation.py'
+    script.write_text("""import msvcrt,os,subprocess,sys,time
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+from windows_job import attach_worker
+state=Path(sys.argv[2]);lock=open(state/'worker.lock','a+b')
+lock.seek(0,os.SEEK_END)
+if not lock.tell():lock.write(b'0');lock.flush()
+lock.seek(0)
+try:msvcrt.locking(lock.fileno(),msvcrt.LK_NBLCK,1)
+except OSError:print('LOCKED',flush=True);sys.exit(0)
+if sys.argv[3]=='probe':print('FREE',flush=True);sys.exit(0)
+job=attach_worker(state)
+child=subprocess.Popen([sys.executable,'-c','import time;time.sleep(120)'],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+print(child.pid,flush=True)
+time.sleep(120)
+""",encoding='utf-8')
+    command=[str(runtime),'-B',str(script),str(companion),str(state)]
+    parent=subprocess.Popen(command+['hold'],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+    handle=None
+    try:
+        lines=queue.Queue(maxsize=1)
+        threading.Thread(target=lambda:lines.put(parent.stdout.readline().strip()),daemon=True).start()
+        try:line=lines.get(timeout=15)
+        except queue.Empty:raise RuntimeError('Timed out starting the worker isolation check.') from None
+        if not line.isdigit():raise RuntimeError('Worker isolation setup failed: '+line)
+        child_pid=int(line)
+        kernel=ctypes.WinDLL('kernel32',use_last_error=True)
+        kernel.OpenProcess.argtypes=[wintypes.DWORD,wintypes.BOOL,wintypes.DWORD];kernel.OpenProcess.restype=wintypes.HANDLE
+        kernel.WaitForSingleObject.argtypes=[wintypes.HANDLE,wintypes.DWORD];kernel.WaitForSingleObject.restype=wintypes.DWORD
+        kernel.CloseHandle.argtypes=[wintypes.HANDLE]
+        handle=kernel.OpenProcess(0x00100000,False,child_pid)
+        if not handle:raise ctypes.WinError(ctypes.get_last_error())
+        probe=subprocess.run(command+['probe'],capture_output=True,text=True,timeout=15,check=True)
+        if probe.stdout.strip()!='LOCKED':raise RuntimeError('Second worker did not respect the active worker lock.')
+        parent.kill();parent.wait(timeout=15)
+        if kernel.WaitForSingleObject(handle,15000)!=0:raise RuntimeError('Engine child survived a killed Windows worker.')
+        probe=subprocess.run(command+['probe'],capture_output=True,text=True,timeout=15,check=True)
+        if probe.stdout.strip()!='FREE':raise RuntimeError('Worker lock was not released after termination.')
+    finally:
+        if parent.poll() is None:parent.kill();parent.wait(timeout=15)
+        if handle:kernel.CloseHandle(handle)
+        if parent.stdout:parent.stdout.close()
+        if parent.stderr:parent.stderr.close()
 
 
 def main():
@@ -72,6 +124,8 @@ def main():
             raise RuntimeError('Native host launcher is missing or outside the staged app.')
         for relative in ('runtime/python.exe','tools/yt-dlp.exe','tools/ffmpeg.exe','tools/ffprobe.exe','companion/worker.py'):
             if not (app/relative).is_file():raise RuntimeError('Installed payload is missing '+relative)
+
+        check_worker_crash_isolation(runtime,app/'companion',root)
 
         class Handler(http.server.BaseHTTPRequestHandler):
             def do_HEAD(self):self.serve(False)
@@ -177,7 +231,7 @@ def main():
                 raise RuntimeError('Output codecs or dimensions do not meet the standard profile.')
             subprocess.run([str(ffmpeg),'-v','error','-xerror','-i',str(files[0]),'-f','null','-'],check=True,timeout=120)
             result={'platform':'Windows x64','browser':'Firefox headless','addon':'signed' if args.signed else 'temporary',
-                    'progress_observed':observed_progress,'reopened_queue':True,'required_tools':True,'optional_engine_missing_check':True,'codec':'H.264 yuv420p + AAC',
+                    'progress_observed':observed_progress,'reopened_queue':True,'worker_crash_isolation':True,'required_tools':True,'optional_engine_missing_check':True,'codec':'H.264 yuv420p + AAC',
                     'width':video['width'],'height':video['height'],'duration':report['format'].get('duration')}
             (artifacts/'result.json').write_text(json.dumps(result,indent=2)+'\n',encoding='utf-8')
             print(json.dumps(result))
