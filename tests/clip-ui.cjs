@@ -11,6 +11,8 @@ const flush=()=>new Promise(r=>setTimeout(r,25));
 (async()=>{await flush();assert.equal(get('clip-enabled').disabled,false);assert.equal(get('clip-start').value,'0:32');assert.equal(get('clip-end').value,'2:00');
 assert.equal(get('clip-start-range').attributes['aria-valuetext'],'In 0:32');assert.equal(get('clip-end-range').attributes['aria-valuetext'],'Out 2:00');assert.equal(get('clip-selected').style.right,'0%');
 vm.runInContext("pageSnapshot.youtube.currentTime=120; $('clip-start').value=''; $('clip-end').value=''; initClip()",ctx);assert.equal(get('clip-start').value,'1:59');assert.equal(get('clip-end').value,'2:00');
+vm.runInContext("pageSnapshot.youtube.duration=120.75; pageSnapshot.youtube.currentTime=120.75; $('clip-start').value=''; $('clip-end').value=''; initClip()",ctx);assert.equal(get('clip-start').value,'1:59');assert.equal(get('clip-end').value,'2:00');
+vm.runInContext("pageSnapshot.youtube.duration=120",ctx);
 vm.runInContext("pageSnapshot.youtube.currentTime=32; $('clip-start').value=''; $('clip-end').value=''; initClip()",ctx);
 get('audio').value='audio';get('output-format').value='av1';get('clip-enabled').checked=true;get('clip-enabled').handlers.change();assert.equal(get('clip-controls').hidden,false);assert.equal(get('output-format').value,'standard');assert.equal(get('audio').value,'video');assert.equal(get('audio').disabled,true);assert.equal(get('captions').value,'off');assert.equal(get('captions').disabled,true);
 get('clip-start-range').value='120';get('clip-start-range').handlers.input();assert.equal(get('clip-start').value,'1:59');assert.equal(get('clip-end').value,'2:00');
