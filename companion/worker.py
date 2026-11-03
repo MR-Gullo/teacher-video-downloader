@@ -74,6 +74,7 @@ def output_categories(output):
     if any(re.search(rb'(?:error|failed|unable).*(?:429|too many requests)',line) and not re.search(rb'subtitles?',line) for line in text.splitlines()):categories.append('media_rate_limited')
     if any(x in text for x in (b'widevine',b'playready',b'drm protected',b'drm protection',b'encrypted content',b'geoblock',b'geo-block',b'not available in your country',b'451 unavailable')):categories.append('protected')
     if any(x in text for x in (b'unrecognized option',b'unknown option',b'unrecognized command or argument')):categories.append('unsupported_option')
+    if b'unhandled exception' in text and b'spectre.console' in text:categories.append('engine_console_error')
     return categories
 
 def run(db,id,argv,lockfd,phase='running',diagnostic=None):
@@ -213,8 +214,10 @@ def process(db,r,lockfd):
     except OSError:
         if not automatic or d['engine']!='n':raise
         d['engine']='yt-dlp';code=run(db,id,engine_argv(d,work),lockfd,diagnostic=diagnostic)
-    if code and automatic and d['engine']=='n' and 'unsupported_option' in diagnostic and not any(x in diagnostic for x in ('access_denied','protected','rate_limited')) and active(db,id,'running'):
+    if code and automatic and d['engine']=='n' and any(x in diagnostic for x in ('unsupported_option','engine_console_error')) and not any(x in diagnostic for x in ('access_denied','protected','rate_limited')) and active(db,id,'running'):
         d['engine']='yt-dlp';update(db,id,message='Trying the compatible local downloader')
+        # Keep the failed engine's partials separate from the fallback output.
+        work=work/'ytdlp-fallback';work.mkdir(parents=True,exist_ok=True,mode=0o700)
         diagnostic=[];code=run(db,id,engine_argv(d,work),lockfd,diagnostic=diagnostic)
     if code and d['engine']=='yt-dlp' and d['captions'] and 'subtitle_rate_limited' in diagnostic and not any(x in diagnostic for x in ('access_denied','protected','media_rate_limited')) and active(db,id,'running'):
         retry=dict(d,captions=False);caption_warning='English captions could not be fetched because of rate limiting.'

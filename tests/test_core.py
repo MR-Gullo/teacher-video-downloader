@@ -32,6 +32,20 @@ class Core(unittest.TestCase):
  def test_doctor_reports_same_optional_engine_lookup(self):
   with patch.object(core,'find_n',return_value=('/verified/versioned/N_m3u8DL-RE',True)):
    n=core.doctor()['N_m3u8DL-RE'];self.assertTrue(n['available']);self.assertEqual(n['path'],'/verified/versioned/N_m3u8DL-RE')
+ def test_bundled_n_requires_pinned_binary_and_appropriate_flags(self):
+  from types import SimpleNamespace
+  root=Path(self.tmp.name);app=root/'app';tools=app/'tools';tools.mkdir(parents=True)
+  binary=tools/'N_m3u8DL-RE';binary.write_bytes(b'not-the-real-binary');binary.chmod(0o700)
+  help_text=b'--disable-update-check --write-meta-json -sv -sa'
+  with patch.object(core,'APP',app/'companion'),patch.object(core.shutil,'which',return_value=None),patch.object(core.subprocess,'run',return_value=SimpleNamespace(returncode=0,stdout=help_text)):
+   for digest in core.KNOWN_N_060:
+    with self.subTest(digest=digest),patch.object(core,'n_digest',return_value=digest):
+     self.assertEqual(core.find_n(),(str(binary.resolve()),True))
+   # A name or a claimed version does not grant the pinned adapter.
+   with patch.object(core,'n_digest',return_value='0'*64):self.assertEqual(core.find_n(),(None,False))
+   strict=help_text+b' --no-config --vod-select-parts -ds'
+   with patch.object(core,'n_digest',return_value='0'*64),patch.object(core.subprocess,'run',return_value=SimpleNamespace(returncode=0,stdout=strict)):
+    self.assertEqual(core.find_n(),(str(binary.resolve()),False))
  def test_argv(self):
   d=core.normalize({'url':'https://x/a.m3u8'});a=core.engine_argv(d,Path('/tmp/job'))
   for flag in ['--continue','--abort-on-unavailable-fragments','--ignore-config','--no-cookies-from-browser']:self.assertIn(flag,a)

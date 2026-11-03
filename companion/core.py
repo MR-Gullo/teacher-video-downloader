@@ -61,21 +61,37 @@ def update(db,id,**kw):
     if not set(kw)<=allowed: raise ValueError('Invalid field')
     db.execute('UPDATE jobs SET '+','.join(k+'=?' for k in kw)+' WHERE id=?', [*kw.values(),id]);db.commit()
 
+# SHA-256 of executables extracted from the pinned v0.6.0-beta upstream
+# archives in scripts/macos/dependencies.lock.json (arm64, x64, Windows x64).
+KNOWN_N_060 = frozenset((
+    'c332b463aa42975c25217d56a51a2ea32fddfd86b4ae8338a8f7416b0bc196e7',
+    '8d4ce04c28f0fa9e2aea9c53af2a5895882f353e12425c5c3fcafaa4370a216a',
+    '35e7c16983f0315bba2a3f37dc392fdfa074be614c8effb642b78376b18ba272',
+))
+
+def n_digest(path):
+    with Path(path).open('rb') as stream:return hashlib.file_digest(stream,'sha256').hexdigest()
+
 def find_n():
-    known=Path.home()/'Library/Application Support/Teacher Video Downloader/tools/N_m3u8DL-RE-0.6.0-beta'
-    expected='c332b463aa42975c25217d56a51a2ea32fddfd86b4ae8338a8f7416b0bc196e7'
-    candidates=[]
-    try:
-        if known.is_file() and os.access(known,os.X_OK) and hashlib.sha256(known.read_bytes()).hexdigest()==expected:candidates.append((str(known),True))
-    except OSError:pass
+    # The app bundle takes priority over PATH. A recognized adapter is selected
+    # only for the exact pinned executable, not by filename or receipt alone.
+    executable='N_m3u8DL-RE.exe' if sys.platform=='win32' else 'N_m3u8DL-RE'
+    candidates=[APP.parent/'tools'/executable,
+                Path.home()/'Library/Application Support/Teacher Video Downloader/tools/N_m3u8DL-RE-0.6.0-beta']
     path=shutil.which('N_m3u8DL-RE')
-    if path:candidates.append((path,False))
-    for path,known_version in candidates:
+    if path:candidates.append(Path(path))
+    visited=set()
+    for candidate in candidates:
         try:
+            path=str(candidate.resolve())
+            if path in visited:continue
+            visited.add(path)
+            if not candidate.is_file() or not os.access(candidate,os.X_OK):continue
+            known=n_digest(candidate) in KNOWN_N_060
             p=subprocess.run([path,'--help'],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=15)
             text=p.stdout.decode(errors='replace')
-            required=('--disable-update-check','--write-meta-json','-sv','-sa') if known_version else ('--no-config','--disable-update-check','--write-meta-json','--vod-select-parts','-sv','-sa','-ds')
-            if p.returncode==0 and all(x in text for x in required):return path,known_version
+            required=('--disable-update-check','--write-meta-json','-sv','-sa') if known else ('--no-config','--disable-update-check','--write-meta-json','--vod-select-parts','-sv','-sa','-ds')
+            if p.returncode==0 and all(x in text for x in required):return path,known
         except (OSError,subprocess.TimeoutExpired):pass
     return None,False
 

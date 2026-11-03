@@ -54,13 +54,27 @@ class Worker(unittest.TestCase):
     def argv(data,*args):engines.append(data['engine']);return [data['engine']]
     def fake_run(db,id,argv,lockfd,**kwargs):
      if argv[0]=='n':kwargs['diagnostic'].append(first);return 1
-     (root/'jobs'/id/'source.mp4').write_bytes(b'fixture');return 0
+     (root/'jobs'/id/'ytdlp-fallback'/'source.mp4').write_bytes(b'fixture');return 0
     with patch.object(worker,'choose_engine',return_value='n'),patch.object(worker,'n_preflight',return_value=True),patch.object(worker.subprocess,'run',return_value=SimpleNamespace(returncode=0,stdout=b'')),patch.object(worker,'engine_argv',side_effect=argv),patch.object(worker,'run',side_effect=fake_run),patch.object(worker,'probe',return_value={'streams':[{'codec_type':'video','width':1280,'height':720},{'codec_type':'audio'}]}):worker.process(db,r,1)
     row=db.execute('SELECT status,attempts FROM jobs').fetchone()
     self.assertEqual(row['attempts'],1)
     if first=='unsupported_option':self.assertEqual(engines,['n','yt-dlp']);self.assertEqual(row['status'],'complete')
     else:self.assertEqual(engines,['n']);self.assertEqual(row['status'],'failed')
     db.close()
+ def test_known_engine_console_crash_falls_back_without_exposing_output(self):
+  self.assertIn('engine_console_error',worker.output_categories(b'Unhandled exception: Spectre.Console.LiveRenderable'))
+  self.assertNotIn('engine_console_error',worker.output_categories(b'normal engine error'))
+  from types import SimpleNamespace
+  with tempfile.TemporaryDirectory() as d:
+   root=Path(d);core.STATE=root;worker.STATE=root;worker.OUTPUT=root/'output';db=core.setup()
+   core.handle({'op':'enqueue','jobs':[{'outputFormat':'original','url':'https://example.com/video','verifiedManifest':True,'captions':False}]},False);row=db.execute('SELECT * FROM jobs').fetchone();engines=[]
+   def argv(data,*args):engines.append(data['engine']);return [data['engine']]
+   def run(db,id,args,lockfd,**kwargs):
+    if args[0]=='n':kwargs['diagnostic'].append('engine_console_error');return 1
+    (root/'jobs'/id/'ytdlp-fallback'/'source.mp4').write_bytes(b'fixture');return 0
+   info={'streams':[{'codec_type':'video','width':1280,'height':720},{'codec_type':'audio'}]}
+   with patch.object(worker,'choose_engine',return_value='n'),patch.object(worker,'n_preflight',return_value=True),patch.object(worker.subprocess,'run',return_value=SimpleNamespace(returncode=0,stdout=b'')),patch.object(worker,'engine_argv',side_effect=argv),patch.object(worker,'run',side_effect=run),patch.object(worker,'probe',return_value=info):worker.process(db,row,1)
+   self.assertEqual(engines,['n','yt-dlp']);self.assertEqual(db.execute('SELECT status FROM jobs').fetchone()[0],'complete');db.close()
  def test_n_preflight_timeout_falls_back_and_protection_stops(self):
   from types import SimpleNamespace
   d={'engine':'n'}
