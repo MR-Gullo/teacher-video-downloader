@@ -12,6 +12,7 @@ import http.server
 import json
 import os
 import queue
+import sqlite3
 from pathlib import Path
 import subprocess
 import sys
@@ -127,11 +128,13 @@ def main():
 
         check_worker_crash_isolation(app/'runtime/python.exe',app/'companion',root)
 
+        request_counts={"HEAD":0,"GET":0}
         class Handler(http.server.BaseHTTPRequestHandler):
             def do_HEAD(self):self.serve(False)
             def do_GET(self):self.serve(True)
             def serve(self,body):
                 if self.path!='/sample.mp4':self.send_error(404);return
+                request_counts[self.command]=request_counts.get(self.command,0)+1
                 size=media.stat().st_size;start=0;header=self.headers.get('Range','')
                 if header.startswith('bytes='):
                     try:start=int(header[6:].split('-',1)[0] or '0')
@@ -150,7 +153,7 @@ def main():
             def log_message(self,*_):pass
         server=http.server.ThreadingHTTPServer(('127.0.0.1',0),Handler)
         thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
-        registry_written=False;driver=None
+        registry_written=False;driver=None;status_history=[]
         try:
             with winreg.CreateKey(winreg.HKEY_CURRENT_USER,KEY) as key:
                 winreg.SetValueEx(key,'',0,winreg.REG_SZ,str(native))
@@ -188,6 +191,8 @@ def main():
             observed_progress=False;deadline=time.monotonic()+180
             while time.monotonic()<deadline:
                 status=driver.find_element(By.ID,'status').text
+                if not status_history or status_history[-1]!=status:
+                    status_history.append(status[:300]);status_history=status_history[-40:]
                 progress=driver.find_element(By.ID,'download-progress')
                 observed_progress |= progress.is_displayed()
                 if 'Saved' in status:break
@@ -235,6 +240,24 @@ def main():
                     'width':video['width'],'height':video['height'],'duration':report['format'].get('duration')}
             (artifacts/'result.json').write_text(json.dumps(result,indent=2)+'\n',encoding='utf-8')
             print(json.dumps(result))
+        except Exception as error:
+            # This profile, queue and video are created by this test. Never dump URLs,
+            # environment variables or arbitrary engine output into CI artifacts.
+            failure={'error':str(error)[:500],'statusHistory':status_history,'httpRequests':request_counts}
+            database=base/'queue.sqlite'
+            if database.is_file():
+                try:
+                    with sqlite3.connect('file:'+database.as_posix()+'?mode=ro',uri=True,timeout=3) as db:
+                        rows=db.execute('SELECT status, progress, attempts FROM jobs ORDER BY created').fetchall()
+                    failure['jobs']=[{'status':status,'progress':progress,'attempts':attempts} for status,progress,attempts in rows]
+                except Exception as diagnostic_error:failure['queueReadError']=type(diagnostic_error).__name__
+            if driver:
+                with contextlib.suppress(Exception):
+                    driver.set_context('content');driver.save_screenshot(str(artifacts/'firefox-failure.png'))
+                    failure['primaryText']=driver.find_element(By.ID,'download').text[:100]
+            (artifacts/'failure.json').write_text(json.dumps(failure,indent=2)+'\n',encoding='utf-8')
+            print('Acceptance failure diagnostics:',json.dumps(failure),flush=True)
+            raise
         finally:
             if driver:
                 with contextlib.suppress(Exception):driver.quit()
