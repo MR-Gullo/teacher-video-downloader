@@ -56,8 +56,8 @@ async function verifyPage(capturedSource=source,capturedPage=pageSnapshot){
   if(!now||now.url!==capturedPage.url||now.documentStamp!==capturedPage.documentStamp)throw new Error('The video page changed. Reopen LessonShelf.');return now;
 }
 function askConsent(){if(!firefox||consent)return Promise.resolve(true);return api.permissions.request(dataPermissions);}
-async function native(request){const result=await api.runtime.sendMessage({type:'native',request:{requestId:crypto.randomUUID(),...request}});if(!result?.ok)throw new Error(result?.error||'The local downloader did not respond.');return result;}
-function resolveWithinLimit(request){let timer;return Promise.race([native(request),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('The local downloader did not respond. Check Help & setup, then try again.')),45000)})]).finally(()=>clearTimeout(timer));}
+async function native(request,timeout=20000){let timer;try{const result=await Promise.race([api.runtime.sendMessage({type:'native',request:{requestId:crypto.randomUUID(),...request}}),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('The local downloader did not respond. Check Downloads before trying again.')),timeout)})]);if(!result?.ok)throw new Error(result?.error||'The local downloader did not respond.');return result;}finally{clearTimeout(timer)}}
+function resolveWithinLimit(request){return native(request,45000);}
 function settings(){const course=$('course').value.trim();if(course&&(/[\\/]|^\.{1,2}$/.test(course)))throw new Error('Use a course name without slashes.');return {quality:$('quality').value,audio:$('audio').value==='audio',captions:$('captions').value==='english',copy:$('copy').value,course,engine:'auto',outputFormat:$('output-format').value||'standard'};}
 function beginDownload(){
   if(privateMode||busy||(boundJob()&&activeStatuses.includes(boundJob().status)))return;
