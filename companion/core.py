@@ -78,6 +78,8 @@ def n_digest(path):
 KNOWN_N_MACHO_CONTENT = frozenset((
     '3911034808cb809a96a27bb982f9ab508d1ffe23cfc0bcd2bddd1f5874851c8a',
     '2998a2d914e93c0f8e777b8bf48e105ed4f2fae07bf436a18988c7b429660c4e',
+    # x86_64 upstream archive 4dab8d25...; codesign adds LC_CODE_SIGNATURE.
+    '2b4775d26b1d00d696d1420e2603555bf321198145be218d51d3a4cf9a3c8d07',
 ))
 
 def macho_content_digest(path):
