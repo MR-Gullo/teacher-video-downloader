@@ -126,6 +126,51 @@ if ($owned.Count -gt 0) { exit 1 }'''
     subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-Command',script],env=env,check=True,timeout=25,capture_output=True)
 
 
+def trace_staged_worker(companion, root):
+    """Instrument only the disposable installation with privacy-safe startup phases."""
+    worker=companion/'worker.py';source=worker.read_text(encoding='utf-8')
+    trace_dir=root/'worker-startup-trace';trace_dir.mkdir()
+    replacements={
+        '    db=setup();lock=open(STATE/\'worker.lock\',\'a+b\');os.chmod(STATE/\'worker.lock\',0o600)':
+            "    _acceptance_trace('before_setup')\n    db=setup();_acceptance_trace('after_setup');lock=open(STATE/'worker.lock','a+b');os.chmod(STATE/'worker.lock',0o600)",
+        '        except OSError:db.close();lock.close();return':
+            "        except OSError as error:_acceptance_trace('lock_failed',error);db.close();lock.close();return",
+        '        from windows_job import attach_worker':
+            "        _acceptance_trace('lock_acquired')\n        from windows_job import attach_worker",
+        '        except (OSError,RuntimeError):db.close();lock.close();return':
+            "        except (OSError,RuntimeError) as error:_acceptance_trace('job_failed',error);db.close();lock.close();return\n        _acceptance_trace('job_attached')",
+        "if __name__=='__main__':main()":
+            "if __name__=='__main__':\n    try:main()\n    except BaseException as error:_acceptance_trace('exception',error);raise\n    finally:_acceptance_trace('exit')",
+    }
+    for old,new in replacements.items():
+        if source.count(old)!=1:raise RuntimeError('Cannot safely instrument the staged worker for startup diagnosis.')
+        source=source.replace(old,new,1)
+    prefix=("import json as _qa_json, os as _qa_os\n"
+            "def _acceptance_trace(phase,error=None):\n"
+            "    try:\n"
+            f"        with open(_qa_os.path.join({str(trace_dir)!r},str(_qa_os.getpid())+'.jsonl'),'a',encoding='utf-8') as log:\n"
+            "            log.write(_qa_json.dumps({'phase':phase,'errorType':type(error).__name__ if error else None,'winerror':getattr(error,'winerror',None)})+'\\n')\n"
+            "    except OSError:pass\n"
+            "_acceptance_trace('python_started')\n")
+    worker.write_text(prefix+source,encoding='utf-8')
+    core=companion/'core.py';core_source=core.read_text(encoding='utf-8')
+    spawn="    subprocess.Popen([sys.executable,str(APP/'worker.py')],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,close_fds=True,**options)"
+    if core_source.count(spawn)!=1:raise RuntimeError('Cannot safely instrument the staged host for startup diagnosis.')
+    core_source=core_source.replace(spawn,"    _acceptance_trace('before_spawn')\n"+spawn+"\n    _acceptance_trace('spawn_returned')",1)
+    core.write_text(prefix.replace("str(_qa_os.getpid())+'.jsonl'","'host-'+str(_qa_os.getpid())+'.jsonl'").replace("_acceptance_trace('python_started')\n",'')+core_source,encoding='utf-8')
+    return trace_dir
+
+
+def worker_startup_diagnostics(trace_dir):
+    traces=[]
+    for path in sorted(trace_dir.glob('*.jsonl'))[:50]:
+        try:
+            entries=[json.loads(line) for line in path.read_text(encoding='utf-8').splitlines()[:20]]
+            traces.append(entries)
+        except (OSError,ValueError):traces.append([{'phase':'unreadable'}])
+    return traces
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--payload', required=True, type=Path)
@@ -204,9 +249,11 @@ def main():
         server=http.server.ThreadingHTTPServer(('127.0.0.1',0),Handler)
         thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
         registry_written=False;driver=None;status_history=[]
+        trace_dir=None
         try:
             check_packaged_worker(app/'runtime/python.exe',app/'companion',app/'tools',root,f'http://127.0.0.1:{server.server_port}/sample.mp4')
             request_counts.update(HEAD=0,GET=0)
+            trace_dir=trace_staged_worker(app/'companion',root)
             with winreg.CreateKey(winreg.HKEY_CURRENT_USER,KEY) as key:
                 winreg.SetValueEx(key,'',0,winreg.REG_SZ,str(native))
             registry_written=True
@@ -308,6 +355,7 @@ def main():
             # This profile, queue and video are created by this test. Never dump URLs,
             # environment variables or arbitrary engine output into CI artifacts.
             failure={'error':str(error)[:500],'statusHistory':status_history,'httpRequests':request_counts}
+            if trace_dir:failure['workerStartup']=worker_startup_diagnostics(trace_dir)
             database=base/'queue.sqlite'
             if database.is_file():
                 try:
