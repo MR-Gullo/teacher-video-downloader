@@ -12,6 +12,27 @@ import tempfile
 from install_payload import digest, install, validate, check_bundle, bundle_digest
 
 
+def n_identity_evidence(installed_payload, env):
+    """Use the installed runtime's recognition code, not the checkout's allowlist."""
+    core = installed_payload / 'companion/core.py'
+    script = '''import json, runpy, sys
+from pathlib import Path
+core = runpy.run_path(sys.argv[1])
+binary = Path(sys.argv[2])
+result = {'macho_content_digest': None}
+try:
+    result['macho_content_digest'] = core['macho_content_digest'](binary)
+except (ValueError, OSError) as error:
+    result['macho_content_digest_error'] = type(error).__name__ + ': ' + str(error)
+result['signed_known_n'] = core['signed_known_n'](binary)
+print(json.dumps(result))
+'''
+    child = subprocess.run([str(installed_payload / 'runtime/bin/python3'), '-B', '-I', '-c', script,
+                            str(core), str(installed_payload / 'tools/N_m3u8DL-RE')],
+                           env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30, check=True)
+    return {**json.loads(child.stdout), 'coreSHA256': digest(core)}
+
+
 def verify(payload, work, report, companion_app=None):
     spec = validate(payload)
     windows = os.name == 'nt'
@@ -41,6 +62,9 @@ def verify(payload, work, report, companion_app=None):
     if not all(flag in n_help for flag in required):
         raise RuntimeError('Bundled N_m3u8DL-RE lacks required engine controls')
     evidence['N_m3u8DL-RE']['capabilities'] = {flag: flag in n_help for flag in (*required, '--no-config', '--vod-select-parts', '-ds')}
+    if not windows:
+        identity_env = dict(env, TVD_STATE_DIR=str(base), YTDL_OUTPUT_DIR=str(account / 'Downloads/youtube-downloads'))
+        evidence['N_m3u8DL-RE']['identity'] = n_identity_evidence(installed_payload, identity_env)
     message = json.dumps({'op': 'doctor'}).encode()
     launcher = app / 'LessonShelf Companion.app/Contents/MacOS/LessonShelfHost' if companion_app else app / ('launch-host.exe' if windows else 'launch-host')
     child = subprocess.run([str(launcher)], input=struct.pack('=I', len(message)) + message, capture_output=True, env=env, timeout=60)
