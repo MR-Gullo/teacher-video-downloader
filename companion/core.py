@@ -139,13 +139,21 @@ def handle(req, start=True):
     if start:ensure_worker()
     return result
 
+def quality_resolution_pattern(quality):
+    bounded=r'([1-9][0-9]?|[1-6][0-9]{2}|7[01][0-9]|720)'
+    if quality=='1080':bounded=r'([1-9][0-9]?|[1-9][0-9]{2}|10[0-7][0-9]|1080)'
+    return f'^([0-9]+x{bounded}|{bounded}x[0-9]+)$'
+
 def engine_argv(d,work, help_text=None):
     if d['engine'] in ('yt-dlp','auto'):
         a=['yt-dlp','--ignore-config','--no-plugin-dirs','--no-remote-components','--no-playlist','--no-overwrites','--continue','--part','--retries','8','--fragment-retries','8','--retry-sleep','http:exp=1:30','--retry-sleep','fragment:exp=1:30','--abort-on-unavailable-fragments','--newline','--progress','--progress-template','download:TVD:%(progress._percent_str)s','--no-write-info-json','--no-cookies-from-browser','--no-cookies','--embed-chapters','--no-embed-info-json','-o',str(work/'source.%(ext)s')]
         if d['audio']:a+=['-f','bestaudio/best','-x','--audio-format','m4a']
         else:
-            q=d['quality'];f='bv*+ba/b' if q=='best' else f'bv*[height<={q}]+ba/b[height<={q}]/b[height<=?{q}]'
+            q=d['quality'];f='bv*+ba/b'
+            if q!='best':
+                pattern=quality_resolution_pattern(q);f=f'bv*[resolution~=?"{pattern}"]+ba/b[resolution~=?"{pattern}"]'
             a+=['-f',f,'--merge-output-format','mkv']
+            if q!='best':a+=['-S',f'res:{q}']
         if d['captions'] and not d['audio']:a+=['--write-subs','--write-auto-subs','--sub-langs','en.*,en','--convert-subs','srt','--embed-subs']
         return a+['--',d['url']]
     known=d.get('_known_n',False)
@@ -154,9 +162,8 @@ def engine_argv(d,work, help_text=None):
     if d['audio']:a+=['-dv','all']
     elif d['quality']=='best':a+=['-sv','for=best']
     elif d['quality']!='best':
-        # Explicit upper bound by height, not a fabricated generic continue flag.
-        heights='144|240|360|480|540|576|720'+('|900|1080' if d['quality']=='1080' else '')
-        a+=['-sv',f'res=^[0-9]+x({heights})$:for=best']
+        # Bound the shorter dimension for both landscape and portrait renditions.
+        a+=['-sv',f"res={quality_resolution_pattern(d['quality'])}:for=best"]
     if d['captions']:a+=['-ss','lang=^(en|eng)(-|$):for=all','--sub-format','SRT']
     else:a+=['-ds','all']
     return a

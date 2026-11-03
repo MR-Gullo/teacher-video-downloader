@@ -1,4 +1,4 @@
-import json,os,sys,tempfile,unittest
+import json,os,re,sys,tempfile,unittest
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'companion'))
 import core
@@ -35,8 +35,12 @@ class Core(unittest.TestCase):
  def test_argv(self):
   d=core.normalize({'url':'https://x/a.m3u8'});a=core.engine_argv(d,Path('/tmp/job'))
   for flag in ['--continue','--abort-on-unavailable-fragments','--ignore-config','--no-cookies-from-browser']:self.assertIn(flag,a)
-  self.assertIn('b[height<=?720]',a[a.index('-f')+1]);self.assertEqual(a[-2: ],['--',d['url']]);d['engine']='n';a=core.engine_argv(d,Path('/tmp/job'))
+  self.assertEqual(a[a.index('-S')+1],'res:720');self.assertIn('resolution~=?',a[a.index('-f')+1]);self.assertEqual(a[-2: ],['--',d['url']]);d['engine']='n';a=core.engine_argv(d,Path('/tmp/job'))
   self.assertNotIn('--continue',a);self.assertIn('--disable-update-check',a);self.assertIn('--no-config',a)
+ def test_n_quality_filter_accepts_both_orientations(self):
+  d=core.normalize({'url':'https://example.com/video.m3u8','engine':'n','quality':'720'});a=core.engine_argv(d,Path('/tmp/job'));pattern=a[a.index('-sv')+1].removeprefix('res=').removesuffix(':for=best')
+  for resolution in ('1280x720','720x1280','404x720'):self.assertIsNotNone(re.fullmatch(pattern,resolution))
+  for resolution in ('1920x1080','1080x1920'):self.assertIsNone(re.fullmatch(pattern,resolution))
  def test_no_secrets_status(self):
   r=core.handle({'op':'enqueue','jobs':[{'url':'https://x/a?token=secret'}]},False)
   self.assertNotIn('secret',json.dumps(r))

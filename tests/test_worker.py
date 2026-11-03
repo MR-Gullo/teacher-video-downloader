@@ -44,7 +44,7 @@ class Worker(unittest.TestCase):
     def fake_run(db,id,argv,lockfd,**kwargs):
      if argv[0]=='n':kwargs['diagnostic'].append(first);return 1
      (root/'jobs'/id/'source.mp4').write_bytes(b'fixture');return 0
-    with patch.object(worker,'choose_engine',return_value='n'),patch.object(worker,'n_preflight',return_value=True),patch.object(worker.subprocess,'run',return_value=SimpleNamespace(returncode=0,stdout=b'')),patch.object(worker,'engine_argv',side_effect=argv),patch.object(worker,'run',side_effect=fake_run),patch.object(worker,'probe',return_value={'streams':[{'codec_type':'video','height':720},{'codec_type':'audio'}]}):worker.process(db,r,1)
+    with patch.object(worker,'choose_engine',return_value='n'),patch.object(worker,'n_preflight',return_value=True),patch.object(worker.subprocess,'run',return_value=SimpleNamespace(returncode=0,stdout=b'')),patch.object(worker,'engine_argv',side_effect=argv),patch.object(worker,'run',side_effect=fake_run),patch.object(worker,'probe',return_value={'streams':[{'codec_type':'video','width':1280,'height':720},{'codec_type':'audio'}]}):worker.process(db,r,1)
     row=db.execute('SELECT status,attempts FROM jobs').fetchone()
     self.assertEqual(row['attempts'],1)
     if first=='unsupported_option':self.assertEqual(engines,['n','yt-dlp']);self.assertEqual(row['status'],'complete')
@@ -71,7 +71,7 @@ class Worker(unittest.TestCase):
    def argv(data,*args):engines.append(data['engine']);return [data['engine']]
    def done(db,id,argv,lockfd,**kwargs):
     (root/'jobs'/id/'source.mp4').write_bytes(b'fixture');return 0
-   with patch.object(worker,'choose_engine',return_value='n'),patch.object(worker,'n_preflight',return_value=False),patch.object(worker.subprocess,'run',return_value=SimpleNamespace(returncode=0,stdout=b'')),patch.object(worker,'engine_argv',side_effect=argv),patch.object(worker,'run',side_effect=done),patch.object(worker,'probe',return_value={'streams':[{'codec_type':'video','height':720},{'codec_type':'audio'}]}):worker.process(db,r,1)
+   with patch.object(worker,'choose_engine',return_value='n'),patch.object(worker,'n_preflight',return_value=False),patch.object(worker.subprocess,'run',return_value=SimpleNamespace(returncode=0,stdout=b'')),patch.object(worker,'engine_argv',side_effect=argv),patch.object(worker,'run',side_effect=done),patch.object(worker,'probe',return_value={'streams':[{'codec_type':'video','width':1280,'height':720},{'codec_type':'audio'}]}):worker.process(db,r,1)
    self.assertEqual(engines,['yt-dlp']);self.assertEqual(db.execute('SELECT status,attempts FROM jobs').fetchone()[:],('complete',1));db.close()
  def test_failed_media_sample_never_publishes(self):
   with tempfile.TemporaryDirectory() as d:
@@ -80,7 +80,7 @@ class Worker(unittest.TestCase):
    def execute(db,id,argv,lockfd,**kwargs):
     if argv[0]=='yt-dlp':(root/'jobs'/id/'source.mp4').write_bytes(b'fixture');return 0
     return 1
-   with patch.object(worker,'run',side_effect=execute),patch.object(worker,'probe',return_value={'streams':[{'codec_type':'video','height':720},{'codec_type':'audio'}]}):
+   with patch.object(worker,'run',side_effect=execute),patch.object(worker,'probe',return_value={'streams':[{'codec_type':'video','width':1280,'height':720},{'codec_type':'audio'}]}):
     with self.assertRaisesRegex(RuntimeError,'sample decoding'):worker.process(db,r,1)
    self.assertEqual(db.execute('SELECT files FROM jobs').fetchone()[0],'[]');self.assertFalse((root/'output').exists());db.close()
  def test_silent_source_requires_explicit_metadata(self):
@@ -105,15 +105,48 @@ class Worker(unittest.TestCase):
    def execute(db,id,argv,lockfd,**kwargs):
     if argv[0]=='yt-dlp':(root/'jobs'/id/'source.mp4').write_bytes(b'fixture')
     return 0
-   with patch.object(worker,'run',side_effect=execute),patch.object(worker,'source_is_silent',return_value=True),patch.object(worker,'probe',return_value={'streams':[{'codec_type':'video','height':492}]}):worker.process(db,r,1)
+   with patch.object(worker,'run',side_effect=execute),patch.object(worker,'source_is_silent',return_value=True),patch.object(worker,'probe',return_value={'streams':[{'codec_type':'video','width':480,'height':492}]}):worker.process(db,r,1)
    row=db.execute('SELECT status,message,files FROM jobs').fetchone();self.assertEqual(row['status'],'complete-warning');self.assertIn('no audio',row['message']);self.assertTrue(json.loads(row['files']));db.close()
+ def test_only_explicit_subtitle_rate_limit_retries_without_subtitles(self):
+  self.assertIn('subtitle_rate_limited',worker.output_categories(b"ERROR: Unable to download video subtitles for en: HTTP Error 429: Too Many Requests"))
+  self.assertNotIn('subtitle_rate_limited',worker.output_categories(b'[info] subtitles available\nERROR: Unable to download video data: HTTP Error 429'))
+  with tempfile.TemporaryDirectory() as d:
+   root=Path(d);core.STATE=root;worker.STATE=root;worker.OUTPUT=root/'output';db=core.setup();core.handle({'op':'enqueue','jobs':[{'url':'https://example.com/video','captions':True}]},False);r=db.execute('SELECT * FROM jobs').fetchone();calls=[]
+   def execute(db,id,argv,lockfd,**kwargs):
+    if argv[0]=='yt-dlp':
+     calls.append(argv)
+     if len(calls)==1:kwargs['diagnostic'].extend(['rate_limited','subtitle_rate_limited']);return 1
+     (root/'jobs'/id/'source.mp4').write_bytes(b'fixture')
+    return 0
+   with patch.object(worker,'run',side_effect=execute),patch.object(worker,'probe',return_value={'streams':[{'codec_type':'video','width':1280,'height':720},{'codec_type':'audio'}]}):worker.process(db,r,1)
+   row=db.execute('SELECT status,message,attempts FROM jobs').fetchone();self.assertEqual(row['status'],'complete-warning');self.assertIn('captions could not be fetched',row['message']);self.assertEqual(row['attempts'],1);self.assertEqual(len(calls),2);self.assertIn('--write-auto-subs',calls[0]);self.assertNotIn('--write-auto-subs',calls[1]);db.close()
+ def test_rate_limit_is_not_retried_or_treated_as_url_text(self):
+  self.assertIn('rate_limited',worker.output_categories(b'ERROR: HTTP Error 429: Too Many Requests'))
+  self.assertNotIn('rate_limited',worker.output_categories(b'Loading https://example.com/video?token=429'))
+  with tempfile.TemporaryDirectory() as d:
+   core.STATE=Path(d);worker.STATE=core.STATE;db=core.setup();core.handle({'op':'enqueue','jobs':[{'url':'https://example.com/video'}]},False);r=db.execute('SELECT * FROM jobs').fetchone()
+   def rate_limited(*args,**kwargs):kwargs['diagnostic'].append('rate_limited');return 1
+   with patch.object(worker,'run',side_effect=rate_limited):worker.process(db,r,1)
+   row=db.execute('SELECT status,message,attempts FROM jobs').fetchone();self.assertEqual(row['status'],'failed');self.assertIn('rate-limit',row['message']);self.assertEqual(row['attempts'],1);db.close()
+ def test_orientation_aware_quality_limit_and_unknown_dimensions(self):
+  for width,height,allowed in ((1280,720,True),(720,1280,True),(1920,1080,False),(None,720,False)):
+   with self.subTest(width=width,height=height),tempfile.TemporaryDirectory() as d:
+    root=Path(d);core.STATE=root;worker.STATE=root;worker.OUTPUT=root/'output';db=core.setup();core.handle({'op':'enqueue','jobs':[{'url':'https://example.com/video','captions':False}]},False);r=db.execute('SELECT * FROM jobs').fetchone()
+    def execute(db,id,argv,lockfd,**kwargs):
+     if argv[0]=='yt-dlp':(root/'jobs'/id/'source.mp4').write_bytes(b'fixture')
+     return 0
+    with patch.object(worker,'run',side_effect=execute),patch.object(worker,'probe',return_value={'streams':[{'codec_type':'video','width':width,'height':height},{'codec_type':'audio'}]}):
+     if allowed:worker.process(db,r,1);self.assertEqual(db.execute('SELECT status FROM jobs').fetchone()[0],'complete')
+     else:
+      with self.assertRaisesRegex(RuntimeError,'quality limit'):worker.process(db,r,1)
+    db.close()
  def test_quality_limit_rejects_oversize_output(self):
   with tempfile.TemporaryDirectory() as d:
    core.STATE=Path(d);worker.STATE=core.STATE;db=core.setup()
    core.handle({'op':'enqueue','jobs':[{'url':'https://example.com/video','quality':'720','captions':False}]},False);r=db.execute('SELECT * FROM jobs').fetchone()
    def pretend_download(*args,**kwargs):
     work=Path(d)/'jobs'/r['id'];(work/'source.mp4').write_bytes(b'fixture');return 0
-   with patch.object(worker,'run',side_effect=pretend_download),patch.object(worker,'probe',return_value={'streams':[{'codec_type':'video','height':1080},{'codec_type':'audio'}]}):
+   with patch.object(worker,'run',side_effect=pretend_download),patch.object(worker,'probe',return_value={'streams':[{'codec_type':'video','width':1920,'height':1080},{'codec_type':'audio'}]}):
     with self.assertRaisesRegex(RuntimeError,'quality limit'):worker.process(db,r,1)
    self.assertEqual(db.execute('SELECT files FROM jobs').fetchone()[0],'[]');db.close()
  def test_status_is_native_message_bounded(self):

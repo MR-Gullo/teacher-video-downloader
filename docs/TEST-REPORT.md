@@ -1,11 +1,19 @@
 # Verification report — 2026-11-02
 
+## Five-video follow-up — 2026-11-03
+
+- The final temporary Zen preview was reloaded with 720p, video and audio, English captions if available, and no extra copy selected. The quality limit now measures the shorter side for portrait and landscape; both dimensions must be known before publication.
+- Mudflats Living and the longer YouTube video were reused from retained local originals after their recorded Downloads copies were missing. New copies were restored without downloading again. Both have 720p H.264 or AV1 video and audio, expected durations, and passed three short decode samples.
+- The X video was recovered manually from an existing retained file after source metadata and direct-format probes confirmed that it has no audio. The 480×492 H.264 file has the expected 102-second duration and passed three video decode samples. This recovery was not a completed installed-popup Retry test.
+- The open Instagram reel's retained 720×1280 H.264/AAC source matches the reel scene by visual comparison. At the user's explicit request, a one-off 404×720 H.264/AAC MP4 was encoded and verified with three decode samples. The original remains in the local job folder. This was a manual recovery, not an automatic extension completion.
+- The YouTube short's metadata offered a 640p stream, but actual download requests returned HTTP 429. No further requests were made after diagnosing the rate limit. The retained diagnostics did not establish whether the rate-limited request was for captions or media. The worker now stops on a general rate limit; for a future error that explicitly identifies an optional subtitle request, it makes one same-job attempt without requesting subtitles and reports the missing captions. Installed-popup Finder checks for the restored and recovered files remain pending while Zen is in use.
+
 ## Progress and destination check — 2026-11-03
 
 - The existing Mudflats Living job completed with a missing-caption warning. In the temporary Zen preview, **Show in Finder** selected its recorded 720p H.264/AAC `.ts` file. No existing media or queue entries were removed.
 - A separate local test used a synthetic clip, an isolated queue and the real yt-dlp worker. A popup fixture in the in-app browser showed measured progress at 7%, 48% and, after reopening, 58%, then showed **Saved**. This fixture used synthetic extension APIs and was not an installed Zen extension test. The installed Zen popup showed the indeterminate preparation indicator; the permission step was interrupted before its isolated fixture job started.
-- The X source's four direct formats were probed and each contained video without audio. Future downloads accept this only after a source check confirms silence; the previous failed X jobs have not been retried. N may show indeterminate progress because its output does not provide the worker's percentage marker.
-- The updated Zen extension files are staged for reload. The final reload and live-progress check in Zen remain pending while the browser is in use. The temporary Progress QA extension and its isolated fixture files remain until they can be removed without disrupting that session.
+- The X source's four direct formats were probed and each contained video without audio. Future downloads accept this only after a source check confirms silence; one failed X job was recovered manually from its retained file, while the other remains unchanged. N may show indeterminate progress because its output does not provide the worker's percentage marker.
+- The updated Zen extension was reloaded before the five-video follow-up; the subsequent orientation-aware companion and copy changes still require a preview reload after the browser is available. The temporary Progress QA extension and its isolated fixture files were removed after the browser was available.
 
 ## Firefox / Zen 0.3.0 temporary preview
 

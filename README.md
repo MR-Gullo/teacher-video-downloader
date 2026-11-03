@@ -13,7 +13,7 @@ On Mac, the optional local companion provides page extraction, queue recovery, a
 ### Teacher defaults
 
 - Companion output defaults to `~/Downloads/youtube-downloads`; optional course folder. `YTDL_OUTPUT_DIR` can override the location.
-- Default to video and audio at up to 720p, retaining the downloaded file without an additional encode. An optional projector or storage copy can be selected in Download settings. A companion video with unknown height or a height above the selected limit is retained privately but not published as a completed result.
+- Default to video and audio at up to 720p, measured on the shorter side so portrait and landscape videos use the same limit. Retain the downloaded file without an additional encode. An optional projector or storage copy can be selected in Download settings. A companion video with an unknown dimension or a shorter side above the selected limit is retained privately but not published as a completed result.
 - English captions and chapters are requested when available. Missing captions are reported. An optional AV1 copy is for storage and may take longer.
 - The original and partial files are retained. No automatic cleanup deletes recovery data.
 

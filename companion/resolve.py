@@ -54,10 +54,10 @@ def parse(url,body):
     lines=[x.strip() for x in body.splitlines()];children=[]
     for i,line in enumerate(lines):
         if line.startswith('#EXT-X-STREAM-INF:'):
-            h=re.search(r'RESOLUTION=\d+x(\d+)',line,re.I)
+            h=re.search(r'RESOLUTION=(\d+)x(\d+)',line,re.I)
             for nextline in lines[i+1:]:
                 if nextline and not nextline.startswith('#'):
-                    children.append((urljoin(url,nextline),int(h.group(1)) if h else None));break
+                    children.append((urljoin(url,nextline),min(int(h.group(1)),int(h.group(2))) if h else None));break
     durations=[float(x) for x in re.findall(r'#EXTINF:\s*([0-9.]+)',body)]
     return {'children':children,'duration':sum(durations) if durations and '#EXT-X-ENDLIST' in body else None}
 
@@ -85,14 +85,14 @@ def resolve(candidates,duration,limit=720,fetcher=fetch):
         record=records.get(master)
         if not record or not record['children']:continue
         linked=[];eligible=[]
-        for child,height in record['children']:
+        for child,resolution in record['children']:
             item=records.get(child);body=docs.get(child,(None,None))[0]
             if not item or not item['duration'] or not body or abs(item['duration']-duration)>max(4,duration*.005):continue
             fingerprint=hashlib.sha256(body.encode()).digest();linked.append(fingerprint)
-            if height and height<=limit:eligible.append((height,fingerprint))
+            if resolution and resolution<=limit:eligible.append((resolution,fingerprint))
         if eligible and any(h in observed for h in linked):matches.append((master,frozenset(eligible)))
     if len(matches)==1:return matches[0][0]
     # Alias masters are equivalent only when their validated capped variants
-    # have the same heights and byte-identical playlists.
+    # have the same resolutions and byte-identical playlists.
     if matches and len({variants for _,variants in matches})==1:return matches[0][0]
     return None

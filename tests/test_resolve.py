@@ -22,6 +22,11 @@ class Resolve(unittest.TestCase):
   self.assertEqual(resolve.resolve([a,b,high],60,720,docs.get),a)
   docs[low]='#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="private"\n#EXTINF:60,\nlow.ts\n#EXT-X-ENDLIST'
   self.assertIsNone(resolve.resolve([a,b,high],60,720,docs.get))
+ def test_portrait_rendition_uses_shorter_dimension(self):
+  master='https://video.example/master.m3u8';child='https://video.example/portrait.m3u8'
+  docs={master:'#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=720x1280\n'+child,child:'#EXTM3U\n#EXTINF:60,\na.ts\n#EXT-X-ENDLIST'}
+  self.assertEqual(resolve.resolve([master,child],60,720,docs.get),master)
+  self.assertIsNone(resolve.resolve([master,child],60,480,docs.get))
  def test_rejects_local_hosts(self):
   self.assertFalse(resolve.public_target('http://127.0.0.1/private'))
 if __name__=='__main__':unittest.main()

@@ -22,6 +22,8 @@ def output_categories(output):
     categories=[]
     if b'unsupported url' in text:categories.append('unsupported_url')
     if re.search(rb'(?:http(?:/\d(?:\.\d)?)?(?:\s+error)?|status(?:\s+code)?|response(?:\s+code)?)\s*[:=]?\s*(?:401|403)\b',text) or any(x in text for x in (b'unauthorized',b'forbidden')):categories.append('access_denied')
+    if re.search(rb'(?:http(?:/\d(?:\.\d)?)?(?:\s+error)?|status(?:\s+code)?|response(?:\s+code)?)\s*[:=]?\s*429\b',text) or b'too many requests' in text:categories.append('rate_limited')
+    if any(re.search(rb'(?:unable|failed|error).*subtitles?.*(?:429|too many requests)',line) for line in text.splitlines()):categories.append('subtitle_rate_limited')
     if any(x in text for x in (b'widevine',b'playready',b'drm protected',b'drm protection',b'encrypted content',b'geoblock',b'geo-block',b'not available in your country',b'451 unavailable')):categories.append('protected')
     if any(x in text for x in (b'unrecognized option',b'unknown option',b'unrecognized command or argument')):categories.append('unsupported_option')
     return categories
@@ -103,7 +105,9 @@ def n_preflight(d,work,help_text):
     try:
         p=subprocess.run(argv+['--skip-download','true'],stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=12)
     except (OSError,subprocess.TimeoutExpired):return False
-    if any(x in output_categories(p.stdout) for x in ('access_denied','protected')):
+    categories=output_categories(p.stdout)
+    if 'rate_limited' in categories:raise RuntimeError('The site is rate-limiting requests. Wait and retry later; partial files retained.')
+    if any(x in categories for x in ('access_denied','protected')):
         raise RuntimeError('Access was denied or the media is protected. No alternate engine was tried.')
     return p.returncode==0
 
@@ -155,16 +159,23 @@ def process(db,r,lockfd):
         else:
             if d['engine']=='n':update(db,id,message='Advanced engine: retries preserve files, but restart may re-download segments')
     else:argv=engine_argv(d,work)
-    diagnostic=[]
+    diagnostic=[];caption_warning=''
     try:code=run(db,id,argv,lockfd,diagnostic=diagnostic)
     except OSError:
         if not automatic or d['engine']!='n':raise
         d['engine']='yt-dlp';code=run(db,id,engine_argv(d,work),lockfd,diagnostic=diagnostic)
-    if code and automatic and d['engine']=='n' and 'unsupported_option' in diagnostic and not any(x in diagnostic for x in ('access_denied','protected')) and active(db,id,'running'):
+    if code and automatic and d['engine']=='n' and 'unsupported_option' in diagnostic and not any(x in diagnostic for x in ('access_denied','protected','rate_limited')) and active(db,id,'running'):
         d['engine']='yt-dlp';update(db,id,message='Trying the compatible local downloader')
         diagnostic=[];code=run(db,id,engine_argv(d,work),lockfd,diagnostic=diagnostic)
+    if code and d['engine']=='yt-dlp' and d['captions'] and 'subtitle_rate_limited' in diagnostic and not any(x in diagnostic for x in ('access_denied','protected')) and active(db,id,'running'):
+        retry=dict(d,captions=False);caption_warning='English captions could not be fetched because of rate limiting.'
+        update(db,id,message='Captions unavailable. Downloading video')
+        diagnostic=[];code=run(db,id,engine_argv(retry,work),lockfd,diagnostic=diagnostic)
     if code is None or not active(db,id,'running'):return
     if code:
+        if 'rate_limited' in diagnostic:
+            transition(db,id,'running',status='failed',message='The site is rate-limiting requests. Wait and retry later; partial files retained.')
+            return
         if 'access_denied' in diagnostic or 'protected' in diagnostic:
             transition(db,id,'running',status='failed',message='Access was denied or the media is protected. No alternate engine was tried; partial files retained.')
             return
@@ -185,7 +196,7 @@ def process(db,r,lockfd):
     if not d['audio'] and d['quality']!='best':
         video=[x for x in info['streams'] if x.get('codec_type')=='video']
         cap=int(d['quality'])
-        if not video or any(not x.get('height') or x['height']>cap for x in video):
+        if not video or any(not x.get('height') or not x.get('width') or min(x['width'],x['height'])>cap for x in video):
             raise RuntimeError('Downloaded video does not meet the selected quality limit. Original retained in the local job folder.')
     try:duration=float(info.get('format',{}).get('duration',0) or 0)
     except (TypeError,ValueError):duration=0
@@ -199,7 +210,7 @@ def process(db,r,lockfd):
         if result is None or not active(db,id,'running'):return
         if result:raise RuntimeError('Downloaded media failed sample decoding. Original retained in the local job folder.')
     if not transition(db,id,'running',status='processing',progress=99,message='Validating original and preparing classroom copy'):return
-    files=[];warning='The source video has no audio.' if silent else '';course=OUTPUT/d['course'] if d['course'] else OUTPUT
+    files=[];warning='The source video has no audio.' if silent else '';warning=(warning+' ' if warning else '')+caption_warning if caption_warning else warning;course=OUTPUT/d['course'] if d['course'] else OUTPUT
     # Publishing original first ensures captions/copy failures cannot destroy it.
     prefix=f"{db.execute('SELECT count(*) FROM jobs WHERE created < ?',(r['created'],)).fetchone()[0]:02d}_{safe_name(d['title'])}_{id[:8]}"
     if not active(db,id,'processing'):return
@@ -222,7 +233,7 @@ def process(db,r,lockfd):
         except InterruptedError:return
         except Exception:warning=(warning+' ' if warning else '')+'Classroom/storage copy failed validation or encoding. Original is safe; inspect dependencies and source format.'
     if not active(db,id,'processing'):return
-    if d['captions'] and not any(x.get('codec_type')=='subtitle' for x in info['streams']) and not d['audio']:
+    if d['captions'] and not caption_warning and not any(x.get('codec_type')=='subtitle' for x in info['streams']) and not d['audio']:
         warning=(warning+' ' if warning else '')+'No embedded English captions were found; no automatic cloud transcription was attempted.'
     if not warning:
         for p in work.glob('*.srt'):p.unlink() # only remove sidecars after successful embedded result
