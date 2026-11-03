@@ -81,6 +81,8 @@ def assemble(target, version, firefox_id, cache, output, ffmpeg_build=None, wind
         shutil.copyfile(licensing / 'python/PYTHON.json', notices / 'PYTHON-DISTRIBUTION.json')
         for key in ('n-license', 'ytdlp-license', 'ytdlp-third-party'):
             shutil.copyfile(cache / lock[key]['filename'], notices / lock[key]['filename'])
+        # The self-contained N executable also redistributes .NET and NuGet libraries.
+        shutil.copytree(Path(__file__).with_name('licenses') / 'n-runtime', notices / 'n-runtime')
         if windows:
             if windows_launcher is None:
                 raise ValueError('Windows requires the compiled Launcher.cs executable')

@@ -1,0 +1,60 @@
+{
+  "component": "N_m3u8DL-RE 0.6.0-beta self-contained dependencies",
+  "runtime": "10.0.9+901ca941248413c79832d2fdbd709da0c4386353",
+  "packages": [
+    {
+      "package": "Dotnet-runtime",
+      "version": "10.0.9",
+      "url": "https://api.nuget.org/v3-flatcontainer/microsoft.netcore.app.runtime.osx-arm64/10.0.9/microsoft.netcore.app.runtime.osx-arm64.10.0.9.nupkg",
+      "sha256": "e20e55b47c91d6fa3b6c0cbe063e3b0779beed498f2c5bc15954ed0eb8cf192e",
+      "repository": {
+        "type": "git",
+        "url": "https://github.com/dotnet/dotnet",
+        "commit": "901ca941248413c79832d2fdbd709da0c4386353"
+      }
+    },
+    {
+      "package": "System.CommandLine",
+      "version": "2.0.0-rc.2.25502.107",
+      "url": "https://api.nuget.org/v3-flatcontainer/system.commandline/2.0.0-rc.2.25502.107/system.commandline.2.0.0-rc.2.25502.107.nupkg",
+      "sha256": "69af1d5312c76715386c3b35349ef456196fc2693188fff23c70176929d3e14c",
+      "repository": {
+        "type": "git",
+        "url": "https://github.com/dotnet/dotnet",
+        "commit": "89c8f6a112d37d2ea8b77821e56d170a1bccdc5a"
+      }
+    },
+    {
+      "package": "Spectre.Console",
+      "version": "0.57.1",
+      "url": "https://api.nuget.org/v3-flatcontainer/spectre.console/0.57.1/spectre.console.0.57.1.nupkg",
+      "sha256": "c985c81248447db2e81dee16b625eea4ab4f9dc3af72db9731f0e75f90a39533",
+      "repository": {
+        "type": "git",
+        "url": "https://github.com/spectreconsole/spectre.console",
+        "commit": "a0913f8628344e429e3994a020c3f791347436b1"
+      }
+    },
+    {
+      "package": "Spectre.Console.Ansi",
+      "version": "0.57.1",
+      "url": "https://api.nuget.org/v3-flatcontainer/spectre.console.ansi/0.57.1/spectre.console.ansi.0.57.1.nupkg",
+      "sha256": "cddeec2905f9b320533b47c4e1aea4a57bee01931fd524829a2e898cc12da22b",
+      "repository": {
+        "type": "git",
+        "url": "https://github.com/spectreconsole/spectre.console",
+        "commit": "a0913f8628344e429e3994a020c3f791347436b1"
+      }
+    }
+  ],
+  "licenseSources": [
+    "https://raw.githubusercontent.com/dotnet/dotnet/89c8f6a112d37d2ea8b77821e56d170a1bccdc5a/LICENSE.TXT",
+    "https://raw.githubusercontent.com/spectreconsole/spectre.console/a0913f8628344e429e3994a020c3f791347436b1/LICENSE.md"
+  ],
+  "licenseFilesSHA256": {
+    "SPECTRE-LICENSE.txt": "3b7331fb6deae7edd8e09f16173b9c61de0358c86cccd69de894ed3643d0ca91",
+    "DOTNET-THIRD-PARTY-NOTICES.TXT": "66f1d4e44973185519bb4aa8a9718eb22fc7af2cc532e3ae9cfc4c127ee7fc54",
+    "SYSTEM-COMMANDLINE-LICENSE.txt": "ae48df11a335dc1a615f4f938b69cba73bcf4485c4f97af49b38efb0f216353b",
+    "DOTNET-LICENSE.TXT": "cfc21f5e8bd655ae997eec916138b707b1d290b83272c02a95c9f821b8c87310"
+  }
+}
