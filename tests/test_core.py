@@ -37,7 +37,7 @@ class Core(unittest.TestCase):
   root=Path(self.tmp.name);app=root/'app';tools=app/'tools';tools.mkdir(parents=True)
   binary=tools/'N_m3u8DL-RE';binary.write_bytes(b'not-the-real-binary');binary.chmod(0o700)
   help_text=b'--disable-update-check --write-meta-json -sv -sa'
-  with patch.object(core,'APP',app/'companion'),patch.object(core.shutil,'which',return_value=None),patch.object(core.subprocess,'run',return_value=SimpleNamespace(returncode=0,stdout=help_text)):
+  with patch.object(core,'APP',app/'companion'),patch.object(core.Path,'home',return_value=root),patch.object(core.shutil,'which',return_value=None),patch.object(core.subprocess,'run',return_value=SimpleNamespace(returncode=0,stdout=help_text)):
    for digest in core.KNOWN_N_060:
     with self.subTest(digest=digest),patch.object(core,'n_digest',return_value=digest):
      self.assertEqual(core.find_n(),(str(binary.resolve()),True))
@@ -46,6 +46,26 @@ class Core(unittest.TestCase):
    strict=help_text+b' --no-config --vod-select-parts -ds'
    with patch.object(core,'n_digest',return_value='0'*64),patch.object(core.subprocess,'run',return_value=SimpleNamespace(returncode=0,stdout=strict)):
     self.assertEqual(core.find_n(),(str(binary.resolve()),False))
+ def test_signed_macho_identity_excludes_only_signature_changes(self):
+  import struct
+  from types import SimpleNamespace
+  path=Path(self.tmp.name)/'engine'
+  header=struct.pack('<8I',0xfeedfacf,0x100000c,0,2,2,88,0,0)
+  segment=struct.pack('<II16sQQQQIIII',0x19,72,b'__LINKEDIT',0,4096,120,32,0,0,0,0)
+  signature=struct.pack('<IIII',0x1d,16,136,16)
+  original=header+segment+signature+b'official-code-00'+b'signature-000000'
+  path.write_bytes(original);expected=core.macho_content_digest(path)
+  # Simulate a new signature that changes only the signature size and segment sizes.
+  signed=bytearray(original[:136]);struct.pack_into('<Q',signed,32+32,4096);struct.pack_into('<Q',signed,32+48,40);struct.pack_into('<I',signed,104+12,24);signed+=b'signed-data-'+b'0'*12;path.write_bytes(signed)
+  self.assertEqual(core.macho_content_digest(path),expected)
+  with patch.object(core.sys,'platform','darwin'),patch.object(core,'KNOWN_N_MACHO_CONTENT',{expected}),patch.object(core.subprocess,'run',return_value=SimpleNamespace(returncode=0)):
+   self.assertTrue(core.signed_known_n(path))
+   signed[120]^=1;path.write_bytes(signed);self.assertFalse(core.signed_known_n(path))
+   signed[120]^=1;path.write_bytes(signed)
+   with patch.object(core.subprocess,'run',return_value=SimpleNamespace(returncode=1)):self.assertFalse(core.signed_known_n(path))
+   struct.pack_into('<Q',signed,32+32,10**9);path.write_bytes(signed);self.assertFalse(core.signed_known_n(path))
+  path.write_bytes(b'invalid')
+  with self.assertRaises(ValueError):core.macho_content_digest(path)
  def test_argv(self):
   d=core.normalize({'url':'https://x/a.m3u8'});a=core.engine_argv(d,Path('/tmp/job'))
   for flag in ['--continue','--abort-on-unavailable-fragments','--ignore-config','--no-cookies-from-browser']:self.assertIn(flag,a)

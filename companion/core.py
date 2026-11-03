@@ -1,5 +1,5 @@
 """Local-only durable queue. No server, shell evaluation, cookie extraction or telemetry."""
-import contextlib, hashlib, json, os, re, shutil, sqlite3, subprocess, sys, time, uuid
+import contextlib, hashlib, json, os, re, shutil, sqlite3, struct, subprocess, sys, time, uuid
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit, parse_qs, urlencode
 
@@ -72,6 +72,52 @@ KNOWN_N_060 = frozenset((
 def n_digest(path):
     with Path(path).open('rb') as stream:return hashlib.file_digest(stream,'sha256').hexdigest()
 
+# Hashes of the executable bytes of the pinned macOS binaries, with only
+# Mach-O signature size and __LINKEDIT size fields normalized. Derived from
+# the hash-verified upstream archives; no installer receipt is trusted here.
+KNOWN_N_MACHO_CONTENT = frozenset((
+    '3911034808cb809a96a27bb982f9ab508d1ffe23cfc0bcd2bddd1f5874851c8a',
+    '2998a2d914e93c0f8e777b8bf48e105ed4f2fae07bf436a18988c7b429660c4e',
+))
+
+def macho_content_digest(path):
+    """Hash the signed Mach-O payload without its replaceable signature blob."""
+    data=bytearray(Path(path).read_bytes())
+    if len(data)<32:raise ValueError('Truncated Mach-O')
+    magic,_,_,_,count,command_bytes,_,_=struct.unpack_from('<8I',data,0)
+    end=32+command_bytes
+    if magic!=0xfeedfacf or end>len(data) or count>4096:raise ValueError('Unsupported Mach-O')
+    offset=32;sig=None;link=None
+    for _ in range(count):
+        if offset+8>end:raise ValueError('Truncated load command')
+        command,size=struct.unpack_from('<II',data,offset)
+        if size<8 or offset+size>end:raise ValueError('Invalid load command')
+        if command==0x19 and size>=72 and bytes(data[offset+8:offset+24]).rstrip(b'\0')==b'__LINKEDIT':
+            if link is not None:raise ValueError('Multiple link-edit segments')
+            link=offset
+        if command==0x1d:
+            if size!=16 or sig is not None:raise ValueError('Invalid code signature')
+            sig=offset
+        offset+=size
+    if offset!=end or sig is None or link is None:raise ValueError('Missing signature metadata')
+    vmsize=struct.unpack_from('<Q',data,link+32)[0]
+    fileoff,filesize=struct.unpack_from('<QQ',data,link+40)
+    sigoff,sigsize=struct.unpack_from('<II',data,sig+8)
+    if not sigsize or sigoff<end or sigoff<fileoff or fileoff+filesize!=len(data) or sigoff+sigsize!=len(data):raise ValueError('Invalid signature range')
+    if vmsize<filesize or vmsize%4096 or vmsize>((filesize+16383)//16384)*16384:raise ValueError('Invalid link-edit mapping')
+    data[link+32:link+40]=b'\0'*8  # __LINKEDIT virtual size
+    data[link+48:link+56]=b'\0'*8  # __LINKEDIT file size
+    data[sig+12:sig+16]=b'\0'*4   # embedded code-signature size
+    return hashlib.sha256(data[:sigoff]).hexdigest()
+
+def signed_known_n(path):
+    if sys.platform!='darwin':return False
+    try:
+        if macho_content_digest(path) not in KNOWN_N_MACHO_CONTENT:return False
+        result=subprocess.run(['/usr/bin/codesign','--verify','--strict',str(path)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=15)
+        return result.returncode==0
+    except (OSError,ValueError,struct.error,subprocess.TimeoutExpired):return False
+
 def find_n():
     # The app bundle takes priority over PATH. A recognized adapter is selected
     # only for the exact pinned executable, not by filename or receipt alone.
@@ -87,7 +133,7 @@ def find_n():
             if path in visited:continue
             visited.add(path)
             if not candidate.is_file() or not os.access(candidate,os.X_OK):continue
-            known=n_digest(candidate) in KNOWN_N_060
+            known=n_digest(candidate) in KNOWN_N_060 or signed_known_n(candidate)
             p=subprocess.run([path,'--help'],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=15)
             text=p.stdout.decode(errors='replace')
             required=('--disable-update-check','--write-meta-json','-sv','-sa') if known else ('--no-config','--disable-update-check','--write-meta-json','--vod-select-parts','-sv','-sa','-ds')
