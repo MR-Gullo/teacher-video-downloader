@@ -199,7 +199,7 @@ def main():
                 progress=driver.find_element(By.ID,'download-progress')
                 observed_progress |= progress.is_displayed()
                 if 'Saved' in status:break
-                if any(x in status.lower() for x in ('could not','failed','not connected')):raise RuntimeError('Download failed: '+status)
+                if any(x in status.lower() for x in ('could not','failed','not connected','did not respond')):raise RuntimeError('Download failed: '+status)
                 time.sleep(.1)
             else:raise RuntimeError('Timed out waiting for an actual saved download.')
             if not observed_progress:raise RuntimeError('No progress indicator was observed during the local transfer.')
