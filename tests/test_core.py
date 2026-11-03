@@ -78,6 +78,20 @@ class Core(unittest.TestCase):
  def test_doctor_reports_same_optional_engine_lookup(self):
   with patch.object(core,'find_n',return_value=('/verified/versioned/N_m3u8DL-RE',True)):
    n=core.doctor()['N_m3u8DL-RE'];self.assertTrue(n['available']);self.assertEqual(n['path'],'/verified/versioned/N_m3u8DL-RE')
+ def test_deno_is_selected_only_from_bundle_and_doctor_checks_execution(self):
+  from types import SimpleNamespace
+  root=Path(self.tmp.name)/'app';(root/'tools').mkdir(parents=True)
+  binary=root/'tools'/('deno.exe' if sys.platform=='win32' else 'deno')
+  binary.write_bytes(b'fixture');binary.chmod(0o700)
+  with patch.object(core,'APP',root/'companion'),patch.object(core,'find_n',return_value=(None,False)),patch.object(core.subprocess,'run',return_value=SimpleNamespace(returncode=0,stdout=b'42\n')) as run:
+   result=core.doctor()['deno'];self.assertTrue(result['available']);self.assertEqual(result['path'],str(binary))
+   self.assertEqual(run.call_args.args[0],[str(binary),'eval','--no-config','console.log(6 * 7)'])
+   argv=core.engine_argv(core.normalize({'url':'https://example.com/v'}),root)
+   self.assertEqual(argv[argv.index('--js-runtimes')+1],'deno:'+str(binary));self.assertLess(argv.index('--no-js-runtimes'),argv.index('--js-runtimes'))
+  binary.unlink()
+  with patch.object(core,'APP',root/'companion'):
+   argv=core.engine_argv(core.normalize({'url':'https://example.com/v'}),root)
+   self.assertIn('--no-js-runtimes',argv);self.assertNotIn('--js-runtimes',argv)
  def test_bundled_n_requires_pinned_binary_and_appropriate_flags(self):
   from types import SimpleNamespace
   root=Path(self.tmp.name);app=root/'app';tools=app/'tools';tools.mkdir(parents=True)

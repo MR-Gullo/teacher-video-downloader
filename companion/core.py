@@ -159,12 +159,23 @@ def find_n():
         except (OSError,subprocess.TimeoutExpired):pass
     return None,False
 
+def bundled_deno():
+    path=APP.parent/'tools'/('deno.exe' if sys.platform=='win32' else 'deno')
+    return str(path) if path.is_file() and os.access(path,os.X_OK) else None
+
 def doctor():
     result={}
     for tool in ('yt-dlp','ffmpeg','ffprobe','aria2c'):
         path=shutil.which(tool)
         result[tool]={'available':bool(path),'path':path}
     path,_=find_n();result['N_m3u8DL-RE']={'available':bool(path),'path':path}
+    path=bundled_deno();available=False
+    if path:
+        try:
+            check=subprocess.run([path,'eval','--no-config','console.log(6 * 7)'],stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=10)
+            available=check.returncode==0 and check.stdout.strip()==b'42'
+        except (OSError,subprocess.TimeoutExpired):pass
+    result['deno']={'available':available,'path':path}
     result['spokenly']={'available':False,'message':'Not configured. No cloud ASR is invoked. The actual adapter interface and privacy must be verified before integration.'}
     result['outputDir']=str(OUTPUT);result['stateDir']=str(STATE)
     return result
@@ -240,6 +251,10 @@ def quality_resolution_pattern(quality):
 def engine_argv(d,work, help_text=None):
     if d['engine'] in ('yt-dlp','auto'):
         a=['yt-dlp','--ignore-config','--no-plugin-dirs','--no-remote-components','--no-playlist','--no-overwrites','--continue','--part','--retries','8','--fragment-retries','8','--retry-sleep','http:exp=1:30','--retry-sleep','fragment:exp=1:30','--abort-on-unavailable-fragments','--newline','--progress','--progress-template','download:TVD:%(progress._percent_str)s','--no-write-info-json','--no-cookies-from-browser','--no-cookies','--embed-chapters','--no-embed-info-json','-o',str(work/'source.%(ext)s')]
+        # Do not silently use an unrelated system runtime. Packaged installs
+        # carry their own Deno alongside the other pinned tools.
+        a+=['--no-js-runtimes']
+        if path:=bundled_deno():a+=['--js-runtimes','deno:'+path]
         if d['audio']:a+=['-f','bestaudio/best','-x','--audio-format','m4a']
         else:
             q=d['quality'];f='bv*+ba/b'
