@@ -40,6 +40,7 @@ def assemble(target, version, firefox_id, cache, output, ffmpeg_build=None, wind
     windows = target == 'windows-x64'
     keys = ['python-' + target, 'n-' + target, 'ytdlp-windows-x64' if windows else 'ytdlp-python', 'n-license', 'ytdlp-license', 'ytdlp-third-party']
     keys += ['python-licenses-' + target]
+    keys += ['deno-' + target, 'deno-source']
     keys += ['ffmpeg-windows-x64'] if windows else ['ffmpeg-source', 'x264-source', 'aom-source']
     for key in keys:
         path = cache / lock[key]['filename']
@@ -68,7 +69,20 @@ def assemble(target, version, firefox_id, cache, output, ffmpeg_build=None, wind
         n = work / 'n'
         extract(cache / lock['n-' + target]['filename'], n)
         shutil.copyfile(next(n.rglob('N_m3u8DL-RE' + ext)), tools / ('N_m3u8DL-RE' + ext))
+        deno = work / 'deno'
+        extract(cache / lock['deno-' + target]['filename'], deno)
+        shutil.copyfile(deno / ('deno' + ext), tools / ('deno' + ext))
         notices = payload / 'licenses'; notices.mkdir()
+        deno_notices = notices / 'deno'; deno_notices.mkdir()
+        sources = payload / 'sources'; sources.mkdir()
+        shutil.copyfile(cache / lock['deno-source']['filename'], sources / lock['deno-source']['filename'])
+        with tarfile.open(cache / lock['deno-source']['filename']) as archive:
+            for source, name in [('deno/LICENSE.md', 'DENO-MIT.txt'),
+                                 ('deno/cli/tsc/dts/node/LICENSE', 'NODE.txt'),
+                                 ('deno/cli/tsc/dts/node/undici/LICENSE', 'UNDICI.txt'),
+                                 ('deno/ext/webgpu/LICENSE.md', 'WEBGPU.txt')]:
+                (deno_notices / name).write_bytes(archive.extractfile(source).read())
+        (deno_notices / 'README.txt').write_text('Official Deno 2.9.8 release and included license texts. The complete upstream release source and Cargo.lock are retained in sources/deno-2.9.8-source.tar.gz. Transitive third-party notice coverage requires parent release review; these files are not a legal approval.\n')
         licensing = work / 'python-notices'; licensing.mkdir()
         licensing_archive = cache / lock['python-licenses-' + target]['filename']
         # Current macOS and Windows runner bsdtar can read zstd without a Python add-on.
@@ -95,7 +109,6 @@ def assemble(target, version, firefox_id, cache, output, ffmpeg_build=None, wind
                 raise ValueError('Mac requires an explicit architecture-matched source build')
             for name in ('ffmpeg', 'ffprobe'):
                 shutil.copyfile(ffmpeg_build / 'prefix/bin' / name, tools / name)
-            sources = payload / 'sources'; sources.mkdir()
             for key in ('ffmpeg-source', 'x264-source', 'aom-source'):
                 shutil.copyfile(cache / lock[key]['filename'], sources / lock[key]['filename'])
             shutil.copyfile(Path(__file__).with_name('build_ffmpeg.py'), sources / 'build_ffmpeg.py')
@@ -113,11 +126,11 @@ def assemble(target, version, firefox_id, cache, output, ffmpeg_build=None, wind
         else:
             shutil.copyfile(Path(__file__).with_name('run_host.py'), installer / 'run_host.py')
             for path in tools.iterdir(): path.chmod(0o755)
-        (payload / 'LICENSES.txt').write_text('LessonShelf bundles CPython from Astral Python Build Standalone, yt-dlp, FFmpeg/ffprobe and N_m3u8DL-RE.\nSee licenses/, the Python runtime LICENSE.txt, PROVENANCE.json and sources/ where present.\nWindows FFmpeg uses upstream yt-dlp FFmpeg-Builds. Its complete corresponding-source distribution must be reviewed before public release.\n')
+        (payload / 'LICENSES.txt').write_text('LessonShelf bundles CPython from Astral Python Build Standalone, yt-dlp, FFmpeg/ffprobe, N_m3u8DL-RE and Deno.\nSee licenses/, the Python runtime LICENSE.txt, PROVENANCE.json and sources/.\nDeno transitive notices and Windows FFmpeg corresponding-source distribution require parent review before public release.\n')
         provenance = {'toolSourceSHA256': {path.name: sha(path) for path in tools.iterdir() if path.is_file()}, 'generatedAt': datetime.now(timezone.utc).isoformat(), 'target': target, 'dependencies': {key: lock[key] for key in keys},
                       'sourceProject': ROOT.name, 'sourceCommit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
                       'sourceDirty': subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT, text=True).splitlines(),
-                      'productionReleaseApproved': False, 'windowsCorrespondingSourceReviewed': False if windows else None}
+                      'productionReleaseApproved': False, 'denoThirdPartyNoticesReviewed': False, 'windowsCorrespondingSourceReviewed': False if windows else None}
         (payload / 'PROVENANCE.json').write_text(json.dumps(provenance, indent=2) + '\n')
         manifest = {'schema': 2, 'target': target, 'version': version, 'prototype': False, 'firefoxID': firefox_id,
                     'files': {path.relative_to(payload).as_posix(): sha(path) for path in sorted(payload.rglob('*')) if path.is_file()}}

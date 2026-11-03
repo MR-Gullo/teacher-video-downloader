@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
+import plistlib
 import re
 import shutil
 import subprocess
@@ -52,7 +53,7 @@ def inspect(app, reviewed_source):
     objects = [path for path in code_objects(app) if not embedded.exists() or embedded not in path.parents]
     if not objects:
         raise ValueError('No Mach-O signing inputs found')
-    for name in (() if embedded.exists() else ('ffmpeg', 'ffprobe', 'N_m3u8DL-RE')):
+    for name in (() if embedded.exists() else ('ffmpeg', 'ffprobe', 'N_m3u8DL-RE', 'deno')):
         if provenance.get('toolSourceSHA256', {}).get(name) != digest(payload / 'tools' / name):
             raise ValueError('Source tool provenance does not match the unsigned input: ' + name)
     return build, spec, objects, embedded if embedded.exists() else None
@@ -76,9 +77,12 @@ def sign(app, output, reviewed_source, identity=None, adhoc_test=False, plan_onl
             if not build.get('embeddedCompanionNotarizationRequired'):
                 raise ValueError('A test-only outer installer cannot be signed for distribution')
             subprocess.run(['xcrun', 'stapler', 'validate', str(embedded)], check=True, capture_output=True)
+    deno_path = app / 'Contents/Resources/payload/tools/deno'
+    deno_entitlements = {'com.apple.security.cs.allow-jit': True}
+    object_entitlements = {str(deno_path.relative_to(app)): deno_entitlements} if deno_path in objects else {}
     plan = {'embeddedCompanionSourceCommit': build.get('embeddedCompanionSourceCommit'), 'inputBundleSHA256': input_bundle_sha, 'component': 'installer' if embedded else 'companion', 'schema': 1, 'sourceCommit': reviewed_source, 'inputApp': str(app), 'inputPayloadSHA256': digest((embedded / 'Contents/Resources/payload/payload.json') if embedded else app / 'Contents/Resources/payload/payload.json'),
             'codeObjectCount': len(objects), 'codeObjects': [path.relative_to(app).as_posix() for path in objects],
-            'hardenedRuntime': True, 'entitlements': {}, 'libraryValidationDisabled': False,
+            'hardenedRuntime': True, 'entitlements': {}, 'codeObjectEntitlements': object_entitlements, 'libraryValidationDisabled': False,
             'mode': 'adhoc-test' if adhoc_test else 'Developer ID Application', 'notarized': False}
     if plan_only:
         return plan
@@ -93,9 +97,16 @@ def sign(app, output, reviewed_source, identity=None, adhoc_test=False, plan_onl
         command += ['--timestamp=none'] if adhoc_test else ['--timestamp']
         candidate_embedded = candidate / 'Contents/Helpers/LessonShelf Companion.app'
         embedded_digest = bundle_digest(candidate_embedded) if embedded else None
+        deno_entitlements_file = Path(temporary) / 'deno-jit.plist'
+        deno_entitlements_file.write_bytes(plistlib.dumps(deno_entitlements))
         for path in [p for p in code_objects(candidate) if not embedded or candidate_embedded not in p.parents]:
-            subprocess.run(command + [str(path)], check=True, capture_output=True)
+            entitlements = ['--entitlements', str(deno_entitlements_file)] if path.relative_to(candidate).as_posix() in object_entitlements else []
+            subprocess.run(command + entitlements + [str(path)], check=True, capture_output=True)
             subprocess.run(['/usr/bin/codesign', '--verify', '--strict', str(path)], check=True, capture_output=True)
+            if entitlements:
+                actual = subprocess.check_output(['/usr/bin/codesign', '--display', '--entitlements', '-', '--xml', str(path)], stderr=subprocess.DEVNULL)
+                if plistlib.loads(actual) != deno_entitlements:
+                    raise ValueError('Deno must have only the reviewed JIT entitlement')
         resources = candidate / 'Contents/Resources'
         payload = candidate_embedded / 'Contents/Resources/payload' if embedded else resources / 'payload'
         # Signing modifies Mach-O files. Preserve original provenance and refresh current-file hashes.

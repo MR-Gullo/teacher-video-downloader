@@ -144,6 +144,38 @@
       "version": "2026.10.26",
       "upstream": "https://github.com/yt-dlp/yt-dlp/releases/tag/2026.10.26",
       "verification": "Official universal Python zipapp release asset SHA-256"
+    },
+    "deno-macos-arm64": {
+      "filename": "deno-aarch64-apple-darwin.zip",
+      "url": "https://github.com/denoland/deno/releases/download/v2.9.8/deno-aarch64-apple-darwin.zip",
+      "sha256": "9f0bf660393da2eaff044cdc7444cb08c73f235849b61d224d825a194ce7c98e",
+      "version": "2.9.8",
+      "upstream": "https://github.com/denoland/deno/releases/tag/v2.9.8",
+      "verification": "GitHub official Deno release asset SHA-256"
+    },
+    "deno-macos-x64": {
+      "filename": "deno-x86_64-apple-darwin.zip",
+      "url": "https://github.com/denoland/deno/releases/download/v2.9.8/deno-x86_64-apple-darwin.zip",
+      "sha256": "4b2f5edd2639b7470f034238b321d7002d8dfb4726d8558f52c17afac370eb2c",
+      "version": "2.9.8",
+      "upstream": "https://github.com/denoland/deno/releases/tag/v2.9.8",
+      "verification": "GitHub official Deno release asset SHA-256"
+    },
+    "deno-windows-x64": {
+      "filename": "deno-x86_64-pc-windows-msvc.zip",
+      "url": "https://github.com/denoland/deno/releases/download/v2.9.8/deno-x86_64-pc-windows-msvc.zip",
+      "sha256": "cba84b26e0df5ae7f74fc66b86a95b866872a86292ebd84fa1e959927edd93bf",
+      "version": "2.9.8",
+      "upstream": "https://github.com/denoland/deno/releases/tag/v2.9.8",
+      "verification": "GitHub official Deno release asset SHA-256"
+    },
+    "deno-source": {
+      "filename": "deno-2.9.8-source.tar.gz",
+      "url": "https://github.com/denoland/deno/releases/download/v2.9.8/deno_src.tar.gz",
+      "sha256": "b57d0281c1647effc735f242ba52bc409747fc6ed6ad4946e76f062c67e113eb",
+      "version": "2.9.8",
+      "upstream": "https://github.com/denoland/deno/releases/tag/v2.9.8",
+      "verification": "GitHub official Deno release source asset SHA-256; source and included licenses preserved"
     }
   }
 }

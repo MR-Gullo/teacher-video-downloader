@@ -45,7 +45,7 @@ def validate(payload, target=None):
                 'installer/install_payload.py', 'LICENSES.txt', 'PROVENANCE.json'}
     if windows:
         required.add('installer/launch-host.exe')
-    required.update('tools/' + name + ('.exe' if windows else '') for name in ('yt-dlp', 'ffmpeg', 'ffprobe', 'N_m3u8DL-RE'))
+    required.update('tools/' + name + ('.exe' if windows else '') for name in ('yt-dlp', 'ffmpeg', 'ffprobe', 'N_m3u8DL-RE', 'deno'))
     files = spec.get('files', {})
     if not required <= files.keys():
         raise ValueError('Offline dependency bundle is incomplete')

@@ -34,7 +34,7 @@ def fixture(payload, target=None, version='0.3.0'):
         interpreter.write_text('#!/bin/sh\nexec ' + shlex.quote(sys.executable) + ' "$@"\n')
     interpreter.chmod(0o700)
     shutil.copytree(ROOT / 'companion', payload / 'companion', ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
-    for tool in ('yt-dlp', 'ffmpeg', 'ffprobe', 'N_m3u8DL-RE'):
+    for tool in ('yt-dlp', 'ffmpeg', 'ffprobe', 'N_m3u8DL-RE', 'deno'):
         path = payload / 'tools' / (tool + ('.exe' if windows else ''))
         path.parent.mkdir(exist_ok=True)
         path.write_text('#!/bin/sh\necho "fixture-only --no-config --disable-update-check --write-meta-json --vod-select-parts -sv -sa -ds"\n')
@@ -100,6 +100,15 @@ class TransactionTests(unittest.TestCase):
         ext = '.exe' if sys.platform == 'win32' else ''
         (self.payload / ('tools/N_m3u8DL-RE' + ext)).unlink()
         with self.assertRaises(ValueError): self.install()
+        self.assertFalse(self.account.exists())
+
+    def test_deno_omission_refused_even_with_consistent_manifest(self):
+        name = 'tools/deno' + ('.exe' if sys.platform == 'win32' else '')
+        (self.payload / name).unlink()
+        del self.spec['files'][name]
+        (self.payload / 'payload.json').write_text(json.dumps(self.spec))
+        with self.assertRaisesRegex(ValueError, 'incomplete'):
+            self.install()
         self.assertFalse(self.account.exists())
 
     def test_unlisted_file(self):

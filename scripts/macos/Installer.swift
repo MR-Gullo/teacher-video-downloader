@@ -50,7 +50,7 @@ func validate(_ directory: URL) throws -> Payload {
     #endif
     guard payload.schema == 2, payload.target == "macos-" + (architecture == "arm64" ? "arm64" : "x64") else { try fail("This download is for a different Mac processor. Get the matching installer.") }
     guard ["teacher-video-downloader@local.invalid", "lessonshelf-preview@local.invalid"].contains(payload.firefoxID) else { try fail("Unapproved Firefox extension ID.") }
-    let required = ["runtime/bin/python3", "tools/yt-dlp", "tools/ffmpeg", "tools/ffprobe", "companion/host.py", "companion/worker.py", "LICENSES.txt", "PROVENANCE.json", "installer/install_payload.py", "tools/N_m3u8DL-RE"]
+    let required = ["runtime/bin/python3", "tools/yt-dlp", "tools/ffmpeg", "tools/ffprobe", "companion/host.py", "companion/worker.py", "LICENSES.txt", "PROVENANCE.json", "installer/install_payload.py", "tools/N_m3u8DL-RE", "tools/deno"]
     guard required.allSatisfy({ payload.files[$0] != nil }) else { try fail("The offline dependency bundle is incomplete. Get a complete installer.") }
     var actual = Set<String>()
     guard let walker = fm.enumerator(at: directory, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey]) else { try fail("Cannot read payload.") }

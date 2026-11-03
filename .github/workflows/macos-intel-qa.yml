@@ -34,7 +34,7 @@ jobs:
       - name: Fetch hash-locked Intel dependencies
         run: |
           set -euo pipefail
-          python scripts/macos/fetch_dependencies.py --cache "$QA_ROOT/upstream" --package python-macos-x64 --package python-licenses-macos-x64 --package n-macos-x64 --package ytdlp-python --package n-license --package ytdlp-license --package ytdlp-third-party --package ffmpeg-source --package x264-source --package aom-source
+          python scripts/macos/fetch_dependencies.py --cache "$QA_ROOT/upstream" --package python-macos-x64 --package python-licenses-macos-x64 --package n-macos-x64 --package deno-macos-x64 --package deno-source --package ytdlp-python --package n-license --package ytdlp-license --package ytdlp-third-party --package ffmpeg-source --package x264-source --package aom-source
       - name: Build FFmpeg and its pinned codec sources
         run: |
           set -euo pipefail

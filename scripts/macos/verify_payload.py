@@ -48,6 +48,7 @@ def verify(payload, work, report, companion_app=None):
                 ('yt-dlp', [str(tools / ('yt-dlp' + ext)), '--version']),
                 ('ffmpeg', [str(tools / ('ffmpeg' + ext)), '-version']),
                 ('ffprobe', [str(tools / ('ffprobe' + ext)), '-version']),
+                ('deno', [str(tools / ('deno' + ext)), '--version']),
                 ('N_m3u8DL-RE', [str(tools / ('N_m3u8DL-RE' + ext)), '--help'])]
     evidence = {}
     n_help = ''
@@ -58,6 +59,29 @@ def verify(payload, work, report, companion_app=None):
         output = child.stdout + child.stderr
         evidence[name] = {'exitCode': child.returncode, 'output': output[:12000], 'sha256': digest(Path(argv[0]))}
         if name == 'N_m3u8DL-RE': n_help = output
+    provenance = json.loads((installed_payload / 'PROVENANCE.json').read_text())
+    expected_deno = provenance['dependencies']['deno-' + spec['target']]['version']
+    if not evidence['deno']['output'].startswith('deno ' + expected_deno + ' '):
+        raise RuntimeError('Bundled Deno version differs from pinned provenance')
+    # A version check does not initialize V8's JIT. Exercise JavaScript in the
+    # installed signed executable with no network, imports, npm or OS permissions.
+    js = '''const f = new Function('x', 'return x + 1');
+let sum = 0; for (let i = 0; i < 50000; i++) sum += f(i);
+const permissions = {};
+for (const name of ['read', 'write', 'net', 'env', 'run', 'ffi', 'sys']) {
+  permissions[name] = (await Deno.permissions.query({name})).state;
+}
+console.log(JSON.stringify({version: Deno.version.deno, sum, permissions}));
+'''
+    js_env = dict(env, DENO_NO_UPDATE_CHECK='1', DENO_NO_PACKAGE_JSON='1', DENO_DIR=str(work / 'deno-cache'))
+    js_result = subprocess.run([str(tools / ('deno' + ext)), 'run', '--no-config', '--no-remote', '--no-npm',
+                                '--no-lock', '--cached-only', '--no-prompt',
+                                '--deny-read', '--deny-write', '--deny-net', '--deny-env', '--deny-run', '--deny-ffi', '--deny-sys', '-'],
+                               input=js, capture_output=True, text=True, env=js_env, check=True, timeout=30)
+    js_evidence = json.loads(js_result.stdout)
+    if js_evidence['version'] != expected_deno or js_evidence['sum'] != 1250025000 or any(state != 'denied' for state in js_evidence['permissions'].values()):
+        raise RuntimeError('Bundled Deno failed restricted offline JavaScript execution')
+    evidence['deno']['restrictedOfflineJavaScript'] = js_evidence
     required = ('--disable-update-check', '--write-meta-json', '-sv', '-sa')
     if not all(flag in n_help for flag in required):
         raise RuntimeError('Bundled N_m3u8DL-RE lacks required engine controls')
