@@ -116,7 +116,7 @@ if let root = stagingUIRoot, root.path == "/" || root.path == fm.homeDirectoryFo
 if CommandLine.arguments.count > 1 && stagingUIRoot == nil {
     do { try runCLI() } catch { fputs("\(error.localizedDescription)\n", stderr); exit(1) }
 } else {
-    final class InstallerWindow: NSObject {
+    final class InstallerWindow: NSObject, NSApplicationDelegate {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 540, height: 290), styleMask: [.titled, .closable], backing: .buffered, defer: false)
         let status = NSTextField(wrappingLabelWithString: "Ready to install. Your queue and saved videos are kept. Close Firefox and wait for active downloads before an update.")
         let button = NSButton(title: "Install", target: nil, action: nil)
@@ -154,6 +154,7 @@ if CommandLine.arguments.count > 1 && stagingUIRoot == nil {
             window.contentView!.addSubview(button); window.contentView!.addSubview(cancel); window.contentView!.addSubview(progress)
             window.center(); window.makeKeyAndOrderFront(nil)
         }
+        func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
         @objc func close() { NSApplication.shared.terminate(nil) }
         @objc func begin() {
             if finished { close(); return }
@@ -185,6 +186,7 @@ if CommandLine.arguments.count > 1 && stagingUIRoot == nil {
     app.setActivationPolicy(.regular)
     app.appearance = NSAppearance(named: .darkAqua)
     let controller = InstallerWindow()
+    app.delegate = controller
     app.activate(ignoringOtherApps: true)
     app.run()
     withExtendedLifetime(controller) {}

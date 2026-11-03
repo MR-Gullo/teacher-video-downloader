@@ -103,7 +103,7 @@ def sign(app, output, reviewed_source, identity=None, adhoc_test=False, plan_onl
         build['signingMode'] = plan['mode']
         build['payloadManifestSHA256'] = digest(payload / 'payload.json')
         (resources / 'BUILD.json').write_text(json.dumps(build, indent=2) + '\n')
-        (resources / 'REVIEW-ONLY.txt').write_text('Ad hoc signing test only. Not for teachers.\n' if adhoc_test else 'Developer ID signed candidate. Notarization and release review remain required.\n')
+        (resources / 'REVIEW-ONLY.txt').write_text('Ad hoc signing test only. Not for teachers.\n' if adhoc_test else 'Developer ID signed candidate prepared for notarization. Check its ticket and notarization receipt before release.\n')
         subprocess.run(command + [str(candidate)], check=True, capture_output=True)
         subprocess.run(['/usr/bin/codesign', '--verify', '--deep', '--strict', str(candidate)], check=True, capture_output=True)
         details = subprocess.check_output(['/usr/bin/codesign', '--display', '--verbose=4', str(candidate)], stderr=subprocess.STDOUT, text=True)
