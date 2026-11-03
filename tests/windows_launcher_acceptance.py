@@ -47,7 +47,7 @@ def check(app, report):
             if not response.get('ok'): raise RuntimeError('Native operation failed: ' + op)
             evidence['requests'].append({'op': op, 'response': response})
         doctor = evidence['requests'][0]['response']['doctor']
-        for name in ('yt-dlp', 'ffmpeg', 'ffprobe', 'N_m3u8DL-RE'):
+        for name in ('yt-dlp', 'ffmpeg', 'ffprobe', 'N_m3u8DL-RE', 'deno'):
             expected = str((app / 'tools' / (name + '.exe')).resolve())
             tool = doctor[name]
             if not tool.get('available') or os.path.normcase(str(Path(tool.get('path', '')).resolve())) != os.path.normcase(expected):

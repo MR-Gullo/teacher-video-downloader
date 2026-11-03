@@ -62,6 +62,10 @@ jobs:
           if ($process.ExitCode -ne 0) { throw "Staged installer failed: $($process.ExitCode)" }
           python tests/windows_launcher_acceptance.py --app "$stage/AppData/Local/LessonShelf/app" --report "$env:QA_ROOT/reports/native-launcher.json"
           if ($LASTEXITCODE -ne 0) { throw 'Native launcher transport check failed' }
+      - name: Verify bundled runtimes and restricted JavaScript execution
+        run: |
+          python scripts/macos/verify_payload.py --payload "$env:QA_ROOT/payload" --work "$env:QA_ROOT/tool-check" --report "$env:QA_ROOT/reports/native-tools.json"
+          if ($LASTEXITCODE -ne 0) { throw 'Bundled runtime acceptance failed' }
       - name: Verify clip timing and content with bundled media tools
         run: |
           $env:PATH = (Resolve-Path "$env:QA_ROOT/payload/tools").Path + ';' + $env:PATH
