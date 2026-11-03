@@ -125,7 +125,7 @@ def main():
         for relative in ('runtime/python.exe','tools/yt-dlp.exe','tools/ffmpeg.exe','tools/ffprobe.exe','companion/worker.py'):
             if not (app/relative).is_file():raise RuntimeError('Installed payload is missing '+relative)
 
-        check_worker_crash_isolation(runtime,app/'companion',root)
+        check_worker_crash_isolation(app/'runtime/python.exe',app/'companion',root)
 
         class Handler(http.server.BaseHTTPRequestHandler):
             def do_HEAD(self):self.serve(False)
