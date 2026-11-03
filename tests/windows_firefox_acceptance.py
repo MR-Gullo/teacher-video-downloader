@@ -157,9 +157,9 @@ def main():
             registry_written=True
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER,KEY) as key:
                 assert winreg.QueryValueEx(key,'')[0]==str(native)
-            options=Options();options.add_argument('-headless');options.add_argument('-remote-allow-system-access')
+            options=Options();options.add_argument('-headless')
             if args.firefox:options.binary_location=str(args.firefox.resolve(strict=True))
-            service=Service(executable_path=str(args.geckodriver.resolve(strict=True))) if args.geckodriver else Service()
+            service=Service(executable_path=str(args.geckodriver.resolve(strict=True)) if args.geckodriver else None, service_args=['--allow-system-access'])
             driver=webdriver.Firefox(options=options,service=service)
             addon=driver.install_addon(str(xpi),temporary=not args.signed)
             if addon!=EXTENSION_ID:raise RuntimeError('Firefox installed a different extension ID.')
