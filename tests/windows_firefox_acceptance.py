@@ -127,6 +127,7 @@ def main():
             if not (app/relative).is_file():raise RuntimeError('Installed payload is missing '+relative)
 
         check_worker_crash_isolation(app/'runtime/python.exe',app/'companion',root)
+        print('Worker crash isolation passed',flush=True)
 
         request_counts={"HEAD":0,"GET":0}
         class Handler(http.server.BaseHTTPRequestHandler):
@@ -162,8 +163,9 @@ def main():
                 assert winreg.QueryValueEx(key,'')[0]==str(native)
             options=Options();options.add_argument('-headless')
             if args.firefox:options.binary_location=str(args.firefox.resolve(strict=True))
-            service=Service(executable_path=str(args.geckodriver.resolve(strict=True)) if args.geckodriver else None, service_args=['--allow-system-access'])
+            service=Service(executable_path=str(args.geckodriver.resolve(strict=True)) if args.geckodriver else None, service_args=['--allow-system-access','--log','debug'], log_output=str(artifacts/'geckodriver.log'))
             driver=webdriver.Firefox(options=options,service=service)
+            print('Firefox started',flush=True)
             addon=driver.install_addon(str(xpi),temporary=not args.signed)
             if addon!=EXTENSION_ID:raise RuntimeError('Firefox installed a different extension ID.')
             # Read the UUID assigned by this disposable Firefox profile.
@@ -187,12 +189,13 @@ def main():
                 driver.execute_script("let n=PopupNotifications.panel.firstElementChild;if(n && n.button)n.button.click();")
             driver.set_context('content')
             allowed=driver.execute_async_script("let done=arguments[arguments.length-1];browser.permissions.contains({data_collection:['browsingActivity','websiteContent']}).then(done,()=>done(false));")
+            print('Firefox companion permission granted:',allowed,flush=True)
             if not allowed:raise RuntimeError('Firefox did not grant the expected extension permission; test did not enqueue.')
             observed_progress=False;deadline=time.monotonic()+180
             while time.monotonic()<deadline:
                 status=driver.find_element(By.ID,'status').text
                 if not status_history or status_history[-1]!=status:
-                    status_history.append(status[:300]);status_history=status_history[-40:]
+                    status_history.append(status[:300]);status_history=status_history[-40:];print('Popup status:',status[:300] or '(empty)',flush=True)
                 progress=driver.find_element(By.ID,'download-progress')
                 observed_progress |= progress.is_displayed()
                 if 'Saved' in status:break
