@@ -41,11 +41,11 @@ def public_url(s):
 def normalize(j):
     if not isinstance(j,dict): raise ValueError('Invalid job')
     u=valid_url(j.get('url',''))
-    engine=j.get('engine','auto'); quality=str(j.get('quality','720')); copy=j.get('copy','none')
-    if engine not in ('yt-dlp','n','auto') or quality not in ('1080','720','best') or copy not in ('none','classroom','av1'): raise ValueError('Invalid settings')
+    engine=j.get('engine','auto'); quality=str(j.get('quality','720')); copy=j.get('copy','none'); output_format=j.get('outputFormat','standard')
+    if engine not in ('yt-dlp','n','auto') or quality not in ('1080','720','best') or copy not in ('none','classroom','av1') or output_format not in ('standard','original','av1'): raise ValueError('Invalid settings')
     if j.get('cookies') or j.get('headers'): raise ValueError('Authentication transfer is not enabled in this build')
     page=valid_url(j['pageUrl']) if j.get('pageUrl') else u
-    return dict(url=u,pageUrl=public_url(page),title=safe_name(j.get('title') or urlsplit(u).hostname),engine=engine,quality=quality,copy=copy,audio=bool(j.get('audio',False)),captions=bool(j.get('captions',True)),course=safe_name(j['course']) if j.get('course') else '',verifiedManifest=bool(j.get('verifiedManifest',False)))
+    return dict(url=u,pageUrl=public_url(page),title=safe_name(j.get('title') or urlsplit(u).hostname),engine=engine,quality=quality,copy=copy,outputFormat=output_format,audio=bool(j.get('audio',False)),captions=bool(j.get('captions',True)),course=safe_name(j['course']) if j.get('course') else '',verifiedManifest=bool(j.get('verifiedManifest',False)))
 
 def status(db):
     out=[]

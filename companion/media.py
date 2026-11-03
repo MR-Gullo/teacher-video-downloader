@@ -23,6 +23,28 @@ def copy_plan(source, mode, source_url=None):
     args+=['-c:a','copy' if all(s.get('codec_name')=='aac' for s in audio) else 'aac','-c:s','mov_text','-movflags','+faststart',str(dest)]
     return (args,dest,info),'Original frame rate preserved; no frame-rate conversion'
 
+def standard_plan(source, quality='720', include_subtitles=True, codec='h264'):
+    """Build a compatible MP4 without changing the source or its frame rate."""
+    info=probe(source)
+    video=next((s for s in info['streams'] if s.get('codec_type')=='video'),None)
+    if not video:raise RuntimeError('Source has no video track')
+    audio=[s for s in info['streams'] if s.get('codec_type')=='audio']
+    cap=None if quality=='best' else int(quality)
+    w,h=video.get('width',0),video.get('height',0)
+    compatible=(codec=='h264' and video.get('codec_name')=='h264' and video.get('pix_fmt')=='yuv420p' and (cap is None or (w and h and min(w,h)<=cap)))
+    dest=Path(source).with_name('standard-output.mp4')
+    args=['ffmpeg','-nostdin','-hide_banner','-v','error','-n','-i',str(source),'-map','0:v:0','-map','0:a?']
+    if include_subtitles:args+=['-map','0:s?']
+    args+=['-map_metadata','0','-map_chapters','0']
+    if compatible:args+=['-c:v','copy']
+    else:
+        if cap:args+=['-vf',f"scale=w='if(gte(iw,ih),min(iw,{cap}*iw/ih),min(iw,{cap}))':h='if(gte(iw,ih),min(ih,{cap}),min(ih,{cap}*ih/iw))':force_original_aspect_ratio=decrease:force_divisible_by=2"]
+        args+=['-c:v','libx264' if codec=='h264' else 'libsvtav1','-crf','20' if codec=='h264' else '32','-preset','medium' if codec=='h264' else '6','-pix_fmt','yuv420p']
+    args+=['-c:a','copy' if all(s.get('codec_name')=='aac' for s in audio) else 'aac']
+    if include_subtitles:args+=['-c:s','mov_text']
+    args+=['-movflags','+faststart',str(dest)]
+    return args,dest,info
+
 def validate_copy(source_info,dest,source,mode, runner=None):
     info=probe(dest)
     duration=float(source_info['format'].get('duration',0));out=float(info['format'].get('duration',0))
@@ -46,5 +68,8 @@ def validate_copy(source_info,dest,source,mode, runner=None):
     else:
         p=subprocess.run(args,capture_output=True,timeout=7200)
         if p.returncode or p.stderr:raise RuntimeError('Copy decode validation failed')
+    if mode=='standard' and b:
+        if b.get('codec_name')!='h264' or b.get('pix_fmt')!='yuv420p':raise RuntimeError('MP4 video is not H.264 yuv420p')
+        if any(x.get('codec_name')!='aac' for x in info['streams'] if x.get('codec_type')=='audio'):raise RuntimeError('MP4 audio is not AAC')
     if mode=='av1' and dest.stat().st_size>Path(source).stat().st_size*.85:return False
     return True

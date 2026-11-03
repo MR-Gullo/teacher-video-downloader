@@ -50,7 +50,7 @@ class Integration(unittest.TestCase):
    if p.stderr:p.stderr.close()
  def worker(self):
   p=subprocess.Popen([sys.executable,str(ROOT/'companion/worker.py')],env=self.env,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE);self.workers.append(p);return p
- def job(self):return core.handle({'op':'enqueue','jobs':[{'url':f'http://127.0.0.1:{self.server.server_port}/fixture.mp4','title':'Fixture','copy':'none','captions':False}]},False)['jobs'][0]['id']
+ def job(self,output_format='original'):return core.handle({'op':'enqueue','jobs':[{'outputFormat':output_format,'url':f'http://127.0.0.1:{self.server.server_port}/fixture.mp4','title':'Fixture','copy':'none','captions':False}]},False)['jobs'][0]['id']
  def status(self):return core.handle({'op':'status'},False)['jobs'][0]
  def wait(self,predicate,seconds=20):
   deadline=time.time()+seconds
@@ -64,6 +64,14 @@ class Integration(unittest.TestCase):
   core.handle({'op':'resume','id':id},False);self.wait(lambda:self.status()['status']=='complete')
   self.assertIn('bytes='+str(saved)+'-',self.ranges)
   result=next(Path(p) for p in self.status()['files'] if p.endswith('.mp4'));self.assertEqual(hashlib.sha256(result.read_bytes()).digest(),hashlib.sha256(self.payload).digest())
+ def test_standard_default_publishes_one_compatible_file_and_retains_source(self):
+  id=self.job('standard');self.worker();self.wait(lambda:self.status()['status'] in ('complete','failed'),seconds=30)
+  state=self.status();self.assertEqual(state['status'],'complete',state['message']);self.assertEqual(len(state['files']),1)
+  source=self.state/'jobs'/id/'source.mp4';self.assertEqual(hashlib.sha256(source.read_bytes()).digest(),hashlib.sha256(self.payload).digest())
+  result=Path(state['files'][0]);self.assertEqual(result.suffix,'.mp4')
+  meta=json.loads(subprocess.run(['ffprobe','-v','error','-show_streams','-of','json',str(result)],check=True,capture_output=True).stdout)
+  v=next(x for x in meta['streams'] if x['codec_type']=='video');a=next(x for x in meta['streams'] if x['codec_type']=='audio')
+  self.assertEqual((v['codec_name'],v['pix_fmt'],a['codec_name']),('h264','yuv420p','aac'))
  def test_termination_restart_requires_resume(self):
   id=self.job();p=self.worker();partial=self.state/'jobs'/id/'source.mp4.part';self.wait(lambda:partial.exists() and partial.stat().st_size>8192)
   p.terminate();p.wait(timeout=10);self.assertEqual(self.status()['status'],'paused');saved=partial.stat().st_size

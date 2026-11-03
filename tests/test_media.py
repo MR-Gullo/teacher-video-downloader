@@ -17,4 +17,27 @@ class Media(unittest.TestCase):
    self.assertTrue(media.validate_copy(info,dest,source,'classroom'));new=media.probe(dest)
    self.assertEqual(next(s for s in new['streams'] if s['codec_type']=='subtitle')['codec_name'],'mov_text');self.assertTrue(source.exists());self.assertEqual(len(new['chapters']),1)
    self.assertEqual(next(s for s in new['streams'] if s['codec_type']=='video')['r_frame_rate'],'24000/1001')
+ def test_standard_cap_preserves_orientation_without_upscaling(self):
+  with tempfile.TemporaryDirectory() as tmp:
+   root=Path(tmp)
+   for size,expected in [('960x540',(640,360)),('540x960',(360,640))]:
+    source=root/(size+'.mkv')
+    subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','testsrc2=size='+size+':rate=10','-t','0.3','-c:v','libx264','-preset','ultrafast',str(source)],check=True)
+    args,dest,info=media.standard_plan(source,'360');dest.unlink(missing_ok=True);subprocess.run(args,check=True)
+    video=next(x for x in media.probe(dest)['streams'] if x['codec_type']=='video')
+    self.assertEqual((video['width'],video['height']),expected)
+ def test_standard_mp4_real_codecs(self):
+  with tempfile.TemporaryDirectory() as tmp:
+   root=Path(tmp)
+   for codec in ('libx264','libvpx-vp9','libsvtav1'):
+    source=root/(codec+'.mkv')
+    subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','testsrc2=size=320x180:rate=24','-f','lavfi','-i','sine=frequency=440','-t','1','-c:v',codec,'-c:a','aac',str(source)],check=True)
+    args,dest,info=media.standard_plan(source,'720')
+    if dest.exists():dest.unlink()
+    subprocess.run(args,check=True)
+    self.assertTrue(media.validate_copy(info,dest,source,'standard'))
+    result=media.probe(dest);v=next(x for x in result['streams'] if x['codec_type']=='video');a=next(x for x in result['streams'] if x['codec_type']=='audio')
+    self.assertEqual((v['codec_name'],v['pix_fmt'],a['codec_name']),('h264','yuv420p','aac'))
+    self.assertEqual((v['width'],v['height']),(320,180));self.assertTrue(source.exists())
+    self.assertEqual(args[args.index('-c:v')+1],'copy' if codec=='libx264' else 'libx264')
 if __name__=='__main__':unittest.main()

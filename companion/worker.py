@@ -3,7 +3,7 @@ import fcntl, hashlib, json, os, re, select, shutil, signal, subprocess, sys, te
 from pathlib import Path
 from urllib.parse import urlsplit
 from core import APP, STATE, OUTPUT, setup, update, engine_argv, safe_name, find_n
-from media import probe, copy_plan, validate_copy
+from media import probe, copy_plan, validate_copy, standard_plan
 STOP=False
 CHILD=None
 
@@ -194,7 +194,7 @@ def process(db,r,lockfd):
     silent=not has_audio and not d['audio'] and d['engine']=='yt-dlp' and source_is_silent(d)
     if not has_audio and not silent:
         raise RuntimeError('The downloaded media has no audio. Original retained in the local job folder.')
-    if not d['audio'] and d['quality']!='best':
+    if not d['audio'] and d['quality']!='best' and d.get('outputFormat','legacy') in ('legacy','original'):
         video=[x for x in info['streams'] if x.get('codec_type')=='video']
         cap=int(d['quality'])
         if not video or any(not x.get('height') or not x.get('width') or min(x['width'],x['height'])>cap for x in video):
@@ -212,27 +212,51 @@ def process(db,r,lockfd):
         if result:raise RuntimeError('Downloaded media failed sample decoding. Original retained in the local job folder.')
     if not transition(db,id,'running',status='processing',progress=99,message='Validating original and preparing classroom copy'):return
     files=[];warning='The source video has no audio.' if silent else '';warning=(warning+' ' if warning else '')+caption_warning if caption_warning else warning;course=OUTPUT/d['course'] if d['course'] else OUTPUT
-    # Publishing original first ensures captions/copy failures cannot destroy it.
     prefix=f"{db.execute('SELECT count(*) FROM jobs WHERE created < ?',(r['created'],)).fetchone()[0]:02d}_{safe_name(d['title'])}_{id[:8]}"
     if not active(db,id,'processing'):return
-    files.append(publish(source,course,prefix+'_original'))
-    update(db,id,files=json.dumps(files))
-    if not d['audio'] and d['copy']!='none':
+    output_format=d.get('outputFormat','legacy')
+    if not d['audio'] and output_format in ('standard','av1'):
+        # Keep the acquired original in the private job folder for recovery.
         try:
-            plan,note=copy_plan(source,d['copy'],d['pageUrl'])
-            if plan:
-                args,dest,source_info=plan
-                if dest.exists():dest.unlink() # only our generated, non-original temp copy
+            args,dest,source_info=standard_plan(source,d['quality'],codec='h264' if output_format=='standard' else 'av1')
+            if dest.exists():dest.unlink() # generated output inside this job only
+            code=run(db,id,args,lockfd,'processing')
+            if code is None:return
+            if code and any(x.get('codec_type')=='subtitle' for x in source_info['streams']):
+                if dest.exists():dest.unlink()
+                args,dest,_=standard_plan(source,d['quality'],include_subtitles=False,codec='h264' if output_format=='standard' else 'av1')
                 code=run(db,id,args,lockfd,'processing')
                 if code is None:return
-                if code:raise RuntimeError('Copy encoding failed; original kept')
-                if validate_copy(source_info,dest,source,d['copy'],lambda a:run(db,id,a,lockfd,'processing')):
-                    if not active(db,id,'processing'):return
-                    files.append(publish(dest,course,prefix+('_classroom' if d['copy']=='classroom' else '_storage-av1')))
-                else:dest.unlink();warning=(warning+' ' if warning else '')+'AV1 copy discarded: less than 15% saving. Original kept.'
-            else:warning=(warning+' ' if warning else '')+note
+                if not code:
+                    source_info=dict(source_info,streams=[x for x in source_info['streams'] if x.get('codec_type')!='subtitle'])
+                    warning=(warning+' ' if warning else '')+"English captions weren't saved in the MP4. Original retained in the local job folder."
+            if code:raise RuntimeError('MP4 conversion failed; original retained in the local job folder.')
+            if not validate_copy(source_info,dest,source,'standard' if output_format=='standard' else 'av1-output',lambda a:run(db,id,a,lockfd,'processing')):
+                raise RuntimeError('MP4 validation failed; original retained in the local job folder.')
+            result_info=probe(dest);result_video=next((x for x in result_info['streams'] if x.get('codec_type')=='video'),{})
+            if d['quality']!='best' and (not result_video.get('width') or not result_video.get('height') or min(result_video['width'],result_video['height'])>int(d['quality'])):raise RuntimeError('Output exceeds the selected quality limit; original retained in the local job folder.')
+            if not active(db,id,'processing'):return
+            files.append(publish(dest,course,prefix))
         except InterruptedError:return
-        except Exception:warning=(warning+' ' if warning else '')+'Classroom/storage copy failed validation or encoding. Original is safe; inspect dependencies and source format.'
+    else:
+        files.append(publish(source,course,prefix+'_original'))
+        update(db,id,files=json.dumps(files))
+        if not d['audio'] and d['copy']!='none':
+            try:
+                plan,note=copy_plan(source,d['copy'],d['pageUrl'])
+                if plan:
+                    args,dest,source_info=plan
+                    if dest.exists():dest.unlink() # only our generated, non-original temp copy
+                    code=run(db,id,args,lockfd,'processing')
+                    if code is None:return
+                    if code:raise RuntimeError('Copy encoding failed; original kept')
+                    if validate_copy(source_info,dest,source,d['copy'],lambda a:run(db,id,a,lockfd,'processing')):
+                        if not active(db,id,'processing'):return
+                        files.append(publish(dest,course,prefix+('_classroom' if d['copy']=='classroom' else '_storage-av1')))
+                    else:dest.unlink();warning=(warning+' ' if warning else '')+'AV1 copy discarded: less than 15% saving. Original kept.'
+                else:warning=(warning+' ' if warning else '')+note
+            except InterruptedError:return
+            except Exception:warning=(warning+' ' if warning else '')+'Classroom/storage copy failed validation or encoding. Original is safe; inspect dependencies and source format.'
     if not active(db,id,'processing'):return
     if d['captions'] and not caption_warning and not any(x.get('codec_type')=='subtitle' for x in info['streams']) and not d['audio']:
         warning=(warning+' ' if warning else '')+'No embedded English captions were found; no automatic cloud transcription was attempted.'
@@ -240,7 +264,8 @@ def process(db,r,lockfd):
         for p in work.glob('*.srt'):p.unlink() # only remove sidecars after successful embedded result
     # Store provenance without signed query credentials.
     provenance={'source':d['pageUrl'],'engine':d['engine'],'captions_requested':d['captions']}
-    meta=work/'provenance.json';meta.write_text(json.dumps(provenance,indent=2));files.append(publish(meta,course,prefix+'_source'))
+    meta=work/'provenance.json';meta.write_text(json.dumps(provenance,indent=2))
+    if output_format=='legacy':files.append(publish(meta,course,prefix+'_source'))
     transition(db,id,'processing',status='complete-warning' if warning else 'complete',progress=100,message=warning or 'Ready for class. Original retained.',files=json.dumps(files))
 
 def main():
