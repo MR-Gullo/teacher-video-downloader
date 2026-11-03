@@ -316,7 +316,6 @@ def process(db,r,lockfd):
     # Store provenance without signed query credentials.
     provenance={'source':d['pageUrl'],'engine':d['engine'],'captions_requested':d['captions']}
     meta=work/'provenance.json';meta.write_text(json.dumps(provenance,indent=2))
-    if output_format=='legacy':files.append(publish(meta,course,prefix+'_source'))
     transition(db,id,'processing',status='complete-warning' if warning else 'complete',progress=100,message=warning or 'Ready for class. Original retained.',files=json.dumps(files))
 
 def main():

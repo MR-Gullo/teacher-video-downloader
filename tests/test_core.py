@@ -13,6 +13,12 @@ class Core(unittest.TestCase):
   self.assertEqual(core.valid_url('abcdefghijk'),'https://www.youtube.com/watch?v=abcdefghijk')
  def test_no_path_traversal(self):
   d=core.normalize({'url':'https://example.com/a','course':'../../../../etc','title':'a/b'});self.assertNotIn('/',d['course']);self.assertNotIn('/',d['title'])
+ def test_status_hides_legacy_json_without_changing_queue(self):
+  result=core.handle({'op':'enqueue','jobs':[{'url':'https://example.com/video'}]},False);id=result['jobIds'][0]
+  recorded=['/videos/item_source.json','/videos/second.JSON','/videos/item.mp4']
+  db=core.setup();core.update(db,id,status='complete',files=json.dumps(recorded));db.close()
+  self.assertEqual(core.handle({'op':'status'},False)['jobs'][0]['files'],['/videos/item.mp4'])
+  db=core.setup();self.assertEqual(json.loads(db.execute('SELECT files FROM jobs WHERE id=?',(id,)).fetchone()[0]),recorded);db.close()
  def test_dedupe_and_control(self):
   request={'op':'enqueue','jobs':[{'url':'https://example.com/v'}]}
   core.handle(request,False);r=core.handle(request,False);self.assertEqual(len(r['jobs']),1);id=r['jobs'][0]['id']

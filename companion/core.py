@@ -51,7 +51,7 @@ def status(db):
     out=[]
     for r in db.execute('SELECT * FROM jobs ORDER BY created DESC LIMIT 100'):
         d=json.loads(r['data']); d['url']=public_url(d['url'])[:512]; d['pageUrl']=d['pageUrl'][:512]
-        d.update({k:r[k] for k in ('id','status','progress','message','attempts')});d['files']=[str(p)[:1024] for p in json.loads(r['files'])[:8]];out.append(d)
+        d.update({k:r[k] for k in ('id','status','progress','message','attempts')});d['files']=[str(p)[:1024] for p in json.loads(r['files']) if not str(p).lower().endswith('.json')][:8];out.append(d)
     # Native messaging has a strict size ceiling. Return newest entries within budget.
     while len(json.dumps(out).encode())>400000 and out:out.pop()
     return out

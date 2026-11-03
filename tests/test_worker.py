@@ -4,6 +4,28 @@ from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'companion'))
 import core,worker
 class Worker(unittest.TestCase):
+ def test_legacy_job_keeps_provenance_private_on_retry(self):
+  with tempfile.TemporaryDirectory() as d:
+   root=Path(d);core.STATE=root;worker.STATE=root;worker.OUTPUT=root/'output';db=core.setup()
+   core.handle({'op':'enqueue','jobs':[{'url':'https://example.com/video','captions':False}]},False)
+   row=db.execute('SELECT * FROM jobs').fetchone();data=json.loads(row['data']);del data['outputFormat']
+   db.execute('UPDATE jobs SET data=? WHERE id=?',(json.dumps(data),row['id']));db.commit()
+   def execute(db,id,argv,lockfd,**kwargs):
+    if argv[0]=='yt-dlp':(root/'jobs'/id/'source.mp4').write_bytes(b'fixture')
+    return 0
+   info={'streams':[{'codec_type':'video','width':1280,'height':720},{'codec_type':'audio'}]}
+   with patch.object(worker,'run',side_effect=execute),patch.object(worker,'probe',return_value=info):
+    worker.process(db,db.execute('SELECT * FROM jobs').fetchone(),1)
+    first=db.execute('SELECT status,files FROM jobs').fetchone();self.assertEqual(first['status'],'complete')
+    saved=json.loads(first['files']);self.assertEqual(len(saved),1);self.assertEqual(Path(saved[0]).suffix,'.mp4')
+    self.assertTrue((root/'jobs'/row['id']/'provenance.json').is_file())
+    self.assertEqual(list((root/'output').glob('*.json')),[])
+    db.execute("UPDATE jobs SET status='queued' WHERE id=?",(row['id'],));db.commit()
+    worker.process(db,db.execute('SELECT * FROM jobs').fetchone(),1)
+    self.assertEqual(json.loads(db.execute('SELECT files FROM jobs').fetchone()[0]),saved)
+    self.assertEqual(len(list((root/'output').glob('*.mp4'))),1)
+    self.assertEqual(list((root/'output').glob('*.json')),[])
+   db.close()
  def test_atomic_publish_collision_and_idempotence(self):
   with tempfile.TemporaryDirectory() as d:
    root=Path(d);a=root/'a.mp4';b=root/'b.mp4';a.write_bytes(b'a'*100000);b.write_bytes(b'b'*100000);out=root/'out'
