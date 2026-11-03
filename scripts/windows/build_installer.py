@@ -42,7 +42,7 @@ def compiler(sdk, references, work):
             folder = runtime
     env = dict(os.environ, DOTNET_CLI_HOME=str(work / 'dotnet-home'), DOTNET_CLI_TELEMETRY_OPTOUT='1',
                DOTNET_SKIP_FIRST_TIME_EXPERIENCE='1', DOTNET_NOLOGO='1')
-    common = prefix + ['/nologo', '/nostdlib+', '/platform:x64', '/optimize+', '/target:exe']
+    common = prefix + ['/nologo', '/noconfig', '/nostdlib+', '/platform:x64', '/optimize+', '/target:exe']
     for name in ('mscorlib', 'System', 'System.Core', 'System.Drawing', 'System.Windows.Forms', 'System.Web.Extensions', 'System.IO.Compression'):
         common.append('/reference:' + str(folder / (name + '.dll')))
     return common, env
