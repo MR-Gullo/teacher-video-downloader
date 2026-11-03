@@ -158,16 +158,14 @@ def trace_staged_worker(companion, root):
     if core_source.count(spawn)!=1:raise RuntimeError('Cannot safely instrument the staged host for startup diagnosis.')
     diagnostic=("    _acceptance_trace('before_spawn')\n"
         f"    _qa_error_path=_qa_os.path.join({str(trace_dir)!r},'stderr-'+str(_qa_os.getpid()))\n"
-        "    with open(_qa_error_path,'wb') as _qa_error:\n"
-        "        _qa_child=subprocess.Popen([sys.executable,str(APP/'worker.py')],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=_qa_error,close_fds=True,**options)\n"
-        "        _acceptance_trace('spawn_returned')\n"
-        "        try:_qa_code=_qa_child.wait(timeout=2)\n"
-        "        except subprocess.TimeoutExpired:_qa_code=None\n"
+        "    options['creationflags'] |= subprocess.CREATE_BREAKAWAY_FROM_JOB\n"
         "    try:\n"
-        "        with open(_qa_error_path,'rb') as _qa_stream:_qa_stderr=_qa_stream.read(65536).lower()\n"
-        "        _qa_kind=next((name for name,marker in [('module_not_found',b'modulenotfounderror'),('import_error',b'importerror'),('permission_error',b'permissionerror'),('fatal_python',b'fatal python error'),('open_failed',b\"can't open file\"),('dll_load',b'dll load failed')] if marker in _qa_stderr),None)\n"
-        "    except OSError:_qa_kind='unreadable'\n"
-        "    _acceptance_trace('after_wait',exit_code=_qa_code,stderr_kind=_qa_kind)")
+        "        with open(_qa_error_path,'wb') as _qa_error:\n"
+        "            _qa_child=subprocess.Popen([sys.executable,str(APP/'worker.py')],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=_qa_error,close_fds=True,**options)\n"
+        "        _acceptance_trace('breakaway_spawn_returned')\n"
+        "    except OSError as error:\n"
+        "        _acceptance_trace('breakaway_spawn_failed',error)\n"
+        "        raise")
     core_source=core_source.replace(spawn,diagnostic,1)
     core.write_text(prefix.replace("str(_qa_os.getpid())+'.jsonl'","'host-'+str(_qa_os.getpid())+'.jsonl'").replace("_acceptance_trace('python_started')\n",'')+core_source,encoding='utf-8')
     return trace_dir
