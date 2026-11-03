@@ -3,6 +3,10 @@
 import json, os, struct, sys
 from core import handle
 os.umask(0o077)
+if sys.platform=='win32':
+    import msvcrt
+    msvcrt.setmode(sys.stdin.fileno(),os.O_BINARY)
+    msvcrt.setmode(sys.stdout.fileno(),os.O_BINARY)
 MAX=512*1024
 
 def main():

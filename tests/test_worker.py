@@ -11,6 +11,17 @@ class Worker(unittest.TestCase):
     files=list(pool.map(lambda src:worker.publish(src,out,'00_Test'),[a,b]))
    self.assertEqual(len(set(files)),2);self.assertEqual({Path(p).read_bytes() for p in files},{a.read_bytes(),b.read_bytes()})
    self.assertEqual(worker.publish(a,out,'00_Test'),files[0]);self.assertFalse(list(out.glob('.tvd-publish-*')))
+ def test_threaded_pipe_reader_reports_progress_and_failure_category(self):
+  import sqlite3
+  with tempfile.TemporaryDirectory() as d:
+   core.STATE=Path(d);db=core.setup()
+   core.handle({'op':'enqueue','jobs':[{'url':'https://example.com/video'}]},False)
+   row=db.execute('SELECT * FROM jobs').fetchone();core.update(db,row['id'],status='running');diagnostic=[]
+   command=[sys.executable,'-c',"import sys,time;print('TVD: 42%',flush=True);time.sleep(.1);print('HTTP Error 429',flush=True);sys.exit(1)"]
+   with patch.object(worker.subprocess,'CREATE_NEW_PROCESS_GROUP',0,create=True):
+    self.assertEqual(worker.run_windows(db,row['id'],command,'running',diagnostic),1)
+   self.assertEqual(db.execute('SELECT progress FROM jobs').fetchone()[0],42)
+   self.assertIn('rate_limited',diagnostic);db.close()
  def test_cancel_at_engine_exit_is_not_completed(self):
   with tempfile.TemporaryDirectory() as d:
    core.STATE=Path(d);worker.STATE=core.STATE;db=core.setup()

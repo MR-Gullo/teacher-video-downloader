@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-import fcntl, hashlib, json, os, re, select, shutil, signal, subprocess, sys, tempfile, time
+import hashlib, json, os, re, select, shutil, signal, subprocess, sys, tempfile, time
+if sys.platform!='win32':import fcntl
 from pathlib import Path
 from urllib.parse import urlsplit
 from core import APP, STATE, OUTPUT, setup, update, engine_argv, safe_name, find_n
@@ -10,11 +11,57 @@ CHILD=None
 def stop(*_):
     global STOP
     STOP=True
-    if CHILD and CHILD.poll() is None:
-        try:os.killpg(CHILD.pid,signal.SIGTERM)
-        except ProcessLookupError:pass
+    if CHILD and CHILD.poll() is None:terminate_child(CHILD)
 
 signal.signal(signal.SIGTERM,stop);signal.signal(signal.SIGINT,stop)
+
+def terminate_child(child):
+    if child.poll() is not None:return
+    if sys.platform=='win32':
+        # taskkill closes the entire engine tree; the enclosing job is the
+        # final safety net if the worker itself exits unexpectedly.
+        subprocess.run(['taskkill','/PID',str(child.pid),'/T','/F'],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=10,check=False)
+        if child.poll() is None:child.kill()
+    else:
+        try:os.killpg(child.pid,signal.SIGTERM)
+        except ProcessLookupError:pass
+
+
+def run_windows(db,id,argv,phase,diagnostic):
+    import queue, threading
+    global CHILD
+    CHILD=subprocess.Popen(argv,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,close_fds=True)
+    output=queue.Queue(maxsize=64);done=threading.Event();child=CHILD
+    def send(block):
+        while not done.is_set():
+            try:output.put(block,timeout=.2);return
+            except queue.Full:continue
+    def reader():
+        try:
+            while True:
+                block=child.stdout.read1(8192)
+                if not block:break
+                send(block)
+        finally:send(None)
+    threading.Thread(target=reader,daemon=True).start()
+    buf=b'';last=0;ended=False
+    while not ended or CHILD.poll() is None:
+        row=db.execute('SELECT status FROM jobs WHERE id=?',(id,)).fetchone()
+        if STOP or not row or row[0]!=phase:
+            done.set();terminate_child(CHILD)
+            try:CHILD.wait(timeout=10)
+            except subprocess.TimeoutExpired:CHILD.kill();CHILD.wait()
+            CHILD.stdout.close();return None
+        try:chunk=output.get(timeout=.2)
+        except queue.Empty:continue
+        if chunk is None:ended=True;continue
+        buf=(buf+chunk)[-16384:]
+        matches=re.findall(rb'TVD:\s*([0-9.]+)%',buf)
+        if matches and time.time()-last>.5:
+            update(db,id,progress=min(99,float(matches[-1])),message='Downloading');last=time.time();buf=b''
+    done.set();CHILD.stdout.close()
+    if diagnostic is not None:diagnostic.extend(output_categories(buf))
+    return CHILD.returncode
 
 def output_categories(output):
     # URL tokens and asset identifiers are not status codes or error messages.
@@ -31,6 +78,7 @@ def output_categories(output):
 
 def run(db,id,argv,lockfd,phase='running',diagnostic=None):
     global CHILD
+    if sys.platform=='win32':return run_windows(db,id,argv,phase,diagnostic)
     # Engine inherits flock: even SIGKILL of worker cannot permit concurrent writer.
     CHILD=subprocess.Popen(argv,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True,pass_fds=(lockfd,))
     os.set_blocking(CHILD.stdout.fileno(),False);buf=b'';last=0
@@ -269,9 +317,20 @@ def process(db,r,lockfd):
     transition(db,id,'processing',status='complete-warning' if warning else 'complete',progress=100,message=warning or 'Ready for class. Original retained.',files=json.dumps(files))
 
 def main():
-    db=setup();lock=open(STATE/'worker.lock','a');os.chmod(STATE/'worker.lock',0o600)
-    try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
-    except BlockingIOError:return
+    db=setup();lock=open(STATE/'worker.lock','a+b');os.chmod(STATE/'worker.lock',0o600)
+    if sys.platform=='win32':
+        import msvcrt
+        lock.seek(0,os.SEEK_END)
+        if lock.tell()==0:lock.write(b'0');lock.flush()
+        lock.seek(0)
+        try:msvcrt.locking(lock.fileno(),msvcrt.LK_NBLCK,1)
+        except OSError:db.close();lock.close();return
+        from windows_job import attach_worker
+        try:job_handle=attach_worker(STATE)
+        except (OSError,RuntimeError):db.close();lock.close();return
+    else:
+        try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        except BlockingIOError:db.close();lock.close();return
     db.execute("UPDATE jobs SET status='paused', message='Worker interrupted. Partial files retained; Resume to continue.' WHERE status IN ('running','processing')");db.commit()
     idle=time.time()
     while not STOP:

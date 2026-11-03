@@ -4,7 +4,7 @@ from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit, parse_qs, urlencode
 
 APP = Path(__file__).resolve().parent
-STATE = Path(os.environ.get('TVD_STATE_DIR', str(Path.home()/ 'Library/Application Support/Teacher Video Downloader'))).expanduser()
+STATE = Path(os.environ.get('TVD_STATE_DIR', str(Path(os.environ.get('LOCALAPPDATA', str(Path.home()))) / 'LessonShelf' if sys.platform=='win32' else Path.home() / 'Library/Application Support/Teacher Video Downloader'))).expanduser()
 OUTPUT = Path(os.environ.get('YTDL_OUTPUT_DIR', str(Path.home()/'Downloads/youtube-downloads'))).expanduser()
 MAX_JOBS = 500
 
@@ -91,7 +91,8 @@ def doctor():
 
 def ensure_worker():
     # Worker flock prevents duplicate workers; detached process survives browser exit.
-    subprocess.Popen([sys.executable,str(APP/'worker.py')],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True,close_fds=True)
+    options={'creationflags':subprocess.CREATE_NEW_PROCESS_GROUP|subprocess.DETACHED_PROCESS} if sys.platform=='win32' else {'start_new_session':True}
+    subprocess.Popen([sys.executable,str(APP/'worker.py')],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,close_fds=True,**options)
 
 def handle(req, start=True):
     if not isinstance(req,dict): raise ValueError('Invalid request')
@@ -130,8 +131,10 @@ def handle(req, start=True):
             if not row or row['status'] not in ('complete','complete-warning'):raise ValueError('No completed download is available to show.')
             files=json.loads(row['files']);target=next((Path(x) for x in files if Path(x).suffix.lower() in ('.mkv','.mp4','.webm','.m4a','.mp3','.opus','.mov','.ts') and Path(x).is_file()),None)
             if not target:raise ValueError('The saved media file could not be found.')
-            if sys.platform!='darwin':raise ValueError('Show in Finder is available on Mac.')
-            subprocess.Popen(['/usr/bin/open','-R',str(target)],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,close_fds=True)
+            if sys.platform=='darwin':command=['/usr/bin/open','-R',str(target)]
+            elif sys.platform=='win32':command=['explorer.exe','/select,'+str(target)]
+            else:raise ValueError('Showing the saved file is not supported on this platform.')
+            subprocess.Popen(command,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,close_fds=True)
         elif op=='doctor':result['doctor']=doctor()
         elif op!='status':raise ValueError('Unknown operation')
         result['jobs']=status(db)
