@@ -120,6 +120,15 @@ class Worker(unittest.TestCase):
     return 0
    with patch.object(worker,'run',side_effect=execute),patch.object(worker,'probe',return_value={'streams':[{'codec_type':'video','width':1280,'height':720},{'codec_type':'audio'}]}):worker.process(db,r,1)
    row=db.execute('SELECT status,message,attempts FROM jobs').fetchone();self.assertEqual(row['status'],'complete-warning');self.assertIn('captions could not be fetched',row['message']);self.assertEqual(row['attempts'],1);self.assertEqual(len(calls),2);self.assertIn('--write-auto-subs',calls[0]);self.assertNotIn('--write-auto-subs',calls[1]);db.close()
+ def test_media_rate_limit_never_falls_back_even_if_subtitle_was_limited(self):
+  output=(b"ERROR: Unable to download video subtitles for en: HTTP Error 429: Too Many Requests\n"
+          b"ERROR: Unable to download video data: HTTP Error 429: Too Many Requests")
+  categories=worker.output_categories(output);self.assertIn('subtitle_rate_limited',categories);self.assertIn('media_rate_limited',categories)
+  with tempfile.TemporaryDirectory() as d:
+   root=Path(d);core.STATE=root;worker.STATE=root;db=core.setup();core.handle({'op':'enqueue','jobs':[{'url':'https://example.com/video','captions':True}]},False);r=db.execute('SELECT * FROM jobs').fetchone();calls=[]
+   def run_once(db,id,argv,lockfd,**kwargs):calls.append(argv);kwargs['diagnostic'].extend(categories);return 1
+   with patch.object(worker,'run',side_effect=run_once):worker.process(db,r,1)
+   self.assertEqual(len(calls),1);self.assertEqual(db.execute('SELECT status FROM jobs').fetchone()[0],'failed');db.close()
  def test_rate_limit_is_not_retried_or_treated_as_url_text(self):
   self.assertIn('rate_limited',worker.output_categories(b'ERROR: HTTP Error 429: Too Many Requests'))
   self.assertNotIn('rate_limited',worker.output_categories(b'Loading https://example.com/video?token=429'))

@@ -24,6 +24,7 @@ def output_categories(output):
     if re.search(rb'(?:http(?:/\d(?:\.\d)?)?(?:\s+error)?|status(?:\s+code)?|response(?:\s+code)?)\s*[:=]?\s*(?:401|403)\b',text) or any(x in text for x in (b'unauthorized',b'forbidden')):categories.append('access_denied')
     if re.search(rb'(?:http(?:/\d(?:\.\d)?)?(?:\s+error)?|status(?:\s+code)?|response(?:\s+code)?)\s*[:=]?\s*429\b',text) or b'too many requests' in text:categories.append('rate_limited')
     if any(re.search(rb'(?:unable|failed|error).*subtitles?.*(?:429|too many requests)',line) for line in text.splitlines()):categories.append('subtitle_rate_limited')
+    if any(re.search(rb'(?:error|failed|unable).*(?:429|too many requests)',line) and not re.search(rb'subtitles?',line) for line in text.splitlines()):categories.append('media_rate_limited')
     if any(x in text for x in (b'widevine',b'playready',b'drm protected',b'drm protection',b'encrypted content',b'geoblock',b'geo-block',b'not available in your country',b'451 unavailable')):categories.append('protected')
     if any(x in text for x in (b'unrecognized option',b'unknown option',b'unrecognized command or argument')):categories.append('unsupported_option')
     return categories
@@ -167,7 +168,7 @@ def process(db,r,lockfd):
     if code and automatic and d['engine']=='n' and 'unsupported_option' in diagnostic and not any(x in diagnostic for x in ('access_denied','protected','rate_limited')) and active(db,id,'running'):
         d['engine']='yt-dlp';update(db,id,message='Trying the compatible local downloader')
         diagnostic=[];code=run(db,id,engine_argv(d,work),lockfd,diagnostic=diagnostic)
-    if code and d['engine']=='yt-dlp' and d['captions'] and 'subtitle_rate_limited' in diagnostic and not any(x in diagnostic for x in ('access_denied','protected')) and active(db,id,'running'):
+    if code and d['engine']=='yt-dlp' and d['captions'] and 'subtitle_rate_limited' in diagnostic and not any(x in diagnostic for x in ('access_denied','protected','media_rate_limited')) and active(db,id,'running'):
         retry=dict(d,captions=False);caption_warning='English captions could not be fetched because of rate limiting.'
         update(db,id,message='Captions unavailable. Downloading video')
         diagnostic=[];code=run(db,id,engine_argv(retry,work),lockfd,diagnostic=diagnostic)
