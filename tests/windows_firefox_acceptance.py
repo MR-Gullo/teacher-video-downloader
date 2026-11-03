@@ -20,6 +20,7 @@ import tempfile
 import threading
 import time
 import zipfile
+from urllib.parse import urlsplit
 
 HOST = 'org.teacher.video_downloader'
 EXTENSION_ID = 'teacher-video-downloader@local.invalid'
@@ -119,66 +120,18 @@ def stop_staged_processes(root, app):
 $deadline = (Get-Date).AddSeconds(15)
 do {
   $owned = @(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) })
-  foreach ($process in $owned) { Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue }
-  if ($owned.Count -gt 0) { Start-Sleep -Milliseconds 250 }
+  foreach ($entry in $owned) {
+    $process = Get-Process -Id $entry.ProcessId -ErrorAction SilentlyContinue
+    if ($process -and $process.Path -and $process.Path.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
+      try { $process.Kill() } catch { if (-not $process.HasExited) { throw } }
+      if (-not $process.WaitForExit(15000)) { throw 'Staged process did not terminate' }
+      $process.Dispose()
+    }
+  }
+  if ($owned.Count -gt 0) { Start-Sleep -Milliseconds 500 }
 } while ($owned.Count -gt 0 -and (Get-Date) -lt $deadline)
 if ($owned.Count -gt 0) { exit 1 }'''
     subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-Command',script],env=env,check=True,timeout=25,capture_output=True)
-
-
-def trace_staged_worker(companion, root):
-    """Instrument only the disposable installation with privacy-safe startup phases."""
-    worker=companion/'worker.py';source=worker.read_text(encoding='utf-8')
-    trace_dir=root/'worker-startup-trace';trace_dir.mkdir()
-    replacements={
-        '    db=setup();lock=open(STATE/\'worker.lock\',\'a+b\');os.chmod(STATE/\'worker.lock\',0o600)':
-            "    _acceptance_trace('before_setup')\n    db=setup();_acceptance_trace('after_setup');lock=open(STATE/'worker.lock','a+b');os.chmod(STATE/'worker.lock',0o600)",
-        '        except OSError:db.close();lock.close();return':
-            "        except OSError as error:_acceptance_trace('lock_failed',error);db.close();lock.close();return",
-        '        from windows_job import attach_worker':
-            "        _acceptance_trace('lock_acquired')\n        from windows_job import attach_worker",
-        '        except (OSError,RuntimeError):db.close();lock.close();return':
-            "        except (OSError,RuntimeError) as error:_acceptance_trace('job_failed',error);db.close();lock.close();return\n        _acceptance_trace('job_attached')",
-        "if __name__=='__main__':main()":
-            "if __name__=='__main__':\n    try:main()\n    except BaseException as error:_acceptance_trace('exception',error);raise\n    finally:_acceptance_trace('exit')",
-    }
-    for old,new in replacements.items():
-        if source.count(old)!=1:raise RuntimeError('Cannot safely instrument the staged worker for startup diagnosis.')
-        source=source.replace(old,new,1)
-    prefix=("import json as _qa_json, os as _qa_os\n"
-            "def _acceptance_trace(phase,error=None,exit_code=None,stderr_kind=None):\n"
-            "    try:\n"
-            f"        with open(_qa_os.path.join({str(trace_dir)!r},str(_qa_os.getpid())+'.jsonl'),'a',encoding='utf-8') as log:\n"
-            "            log.write(_qa_json.dumps({'phase':phase,'errorType':type(error).__name__ if error else None,'winerror':getattr(error,'winerror',None),'exitCode':exit_code,'stderrKind':stderr_kind})+'\\n')\n"
-            "    except OSError:pass\n"
-            "_acceptance_trace('python_started')\n")
-    worker.write_text(prefix+source,encoding='utf-8')
-    core=companion/'core.py';core_source=core.read_text(encoding='utf-8')
-    spawn="    subprocess.Popen([sys.executable,str(APP/'worker.py')],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,close_fds=True,**options)"
-    if core_source.count(spawn)!=1:raise RuntimeError('Cannot safely instrument the staged host for startup diagnosis.')
-    diagnostic=("    _acceptance_trace('before_spawn')\n"
-        f"    _qa_error_path=_qa_os.path.join({str(trace_dir)!r},'stderr-'+str(_qa_os.getpid()))\n"
-        "    options['creationflags'] |= subprocess.CREATE_BREAKAWAY_FROM_JOB\n"
-        "    try:\n"
-        "        with open(_qa_error_path,'wb') as _qa_error:\n"
-        "            _qa_child=subprocess.Popen([sys.executable,str(APP/'worker.py')],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=_qa_error,close_fds=True,**options)\n"
-        "        _acceptance_trace('breakaway_spawn_returned')\n"
-        "    except OSError as error:\n"
-        "        _acceptance_trace('breakaway_spawn_failed',error)\n"
-        "        raise")
-    core_source=core_source.replace(spawn,diagnostic,1)
-    core.write_text(prefix.replace("str(_qa_os.getpid())+'.jsonl'","'host-'+str(_qa_os.getpid())+'.jsonl'").replace("_acceptance_trace('python_started')\n",'')+core_source,encoding='utf-8')
-    return trace_dir
-
-
-def worker_startup_diagnostics(trace_dir):
-    traces=[]
-    for path in sorted(trace_dir.glob('*.jsonl'))[:50]:
-        try:
-            entries=[json.loads(line) for line in path.read_text(encoding='utf-8').splitlines()[:20]]
-            traces.append(entries)
-        except (OSError,ValueError):traces.append([{'phase':'unreadable'}])
-    return traces
 
 
 def main():
@@ -233,12 +186,13 @@ def main():
         check_worker_crash_isolation(app/'runtime/python.exe',app/'companion',root)
         print('Worker crash isolation passed',flush=True)
 
-        request_counts={"HEAD":0,"GET":0}
+        request_counts={"HEAD":0,"GET":0};close_request=threading.Event();release_close=threading.Event()
         class Handler(http.server.BaseHTTPRequestHandler):
             def do_HEAD(self):self.serve(False)
             def do_GET(self):self.serve(True)
             def serve(self,body):
-                if self.path!='/sample.mp4':self.send_error(404);return
+                parsed=urlsplit(self.path)
+                if parsed.path!='/sample.mp4':self.send_error(404);return
                 request_counts[self.command]=request_counts.get(self.command,0)+1
                 size=media.stat().st_size;start=0;header=self.headers.get('Range','')
                 if header.startswith('bytes='):
@@ -251,6 +205,9 @@ def main():
                 self.end_headers()
                 if body:
                     try:
+                        if parsed.query=='browser-close':
+                            close_request.set()
+                            if not release_close.wait(timeout=45):return
                         with media.open('rb') as f:
                             f.seek(start)
                             while data:=f.read(32768):self.wfile.write(data);self.wfile.flush();time.sleep(.04)
@@ -259,11 +216,9 @@ def main():
         server=http.server.ThreadingHTTPServer(('127.0.0.1',0),Handler)
         thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
         registry_written=False;driver=None;status_history=[]
-        trace_dir=None
         try:
             check_packaged_worker(app/'runtime/python.exe',app/'companion',app/'tools',root,f'http://127.0.0.1:{server.server_port}/sample.mp4')
             request_counts.update(HEAD=0,GET=0)
-            trace_dir=trace_staged_worker(app/'companion',root)
             with winreg.CreateKey(winreg.HKEY_CURRENT_USER,KEY) as key:
                 winreg.SetValueEx(key,'',0,winreg.REG_SZ,str(native))
             registry_written=True
@@ -356,16 +311,31 @@ def main():
             if (video.get('codec_name'),video.get('pix_fmt'),audio.get('codec_name'))!=('h264','yuv420p','aac') or min(video['width'],video['height'])>720:
                 raise RuntimeError('Output codecs or dimensions do not meet the standard profile.')
             subprocess.run([str(ffmpeg),'-v','error','-xerror','-i',str(files[0]),'-f','null','-'],check=True,timeout=120)
+            # A second local job blocks at the HTTP server until Firefox has
+            # fully exited. It can finish only if the actual worker survives.
+            response=driver.execute_async_script("let done=arguments[arguments.length-1];browser.runtime.sendMessage({type:'native',request:{op:'enqueue',jobs:[{url:arguments[0],captions:false,outputFormat:'standard'}]}}).then(done,e=>done({ok:false,error:String(e)}));",f'http://127.0.0.1:{server.server_port}/sample.mp4?browser-close')
+            if not response.get('ok') or len(response.get('jobIds',[]))!=1:raise RuntimeError('Could not enqueue the browser-close test job.')
+            close_job=response['jobIds'][0]
+            if not close_request.wait(timeout=45):raise RuntimeError('Browser-close job did not begin its local HTTP transfer.')
+            driver.quit();driver=None
+            print('Firefox closed while the second transfer was held open',flush=True)
+            release_close.set();deadline=time.monotonic()+90
+            while time.monotonic()<deadline:
+                with contextlib.closing(sqlite3.connect(base/'queue.sqlite',timeout=3)) as db:
+                    row=db.execute('SELECT status,files FROM jobs WHERE id=?',(close_job,)).fetchone()
+                if row and row[0] in ('complete','complete-warning'):
+                    if not any(Path(path).is_file() and Path(path).suffix.lower()=='.mp4' for path in json.loads(row[1])):raise RuntimeError('Browser-close job reported completion without a saved MP4.')
+                    break
+                if row and row[0] in ('failed','paused','cancelled'):raise RuntimeError('Browser-close job stopped after Firefox exited: '+row[0])
+                time.sleep(.25)
+            else:raise RuntimeError('Download did not complete after Firefox exited.')
             result={'platform':'Windows x64','browser':'Firefox headless','addon':'signed' if args.signed else 'temporary',
-                    'progress_observed':observed_progress,'reopened_queue':True,'worker_crash_isolation':True,'required_tools':True,'optional_engine_missing_check':True,'codec':'H.264 yuv420p + AAC',
+                    'progress_observed':observed_progress,'reopened_queue':True,'browser_close_during_transfer':True,'worker_crash_isolation':True,'required_tools':True,'optional_engine_missing_check':True,'codec':'H.264 yuv420p + AAC',
                     'width':video['width'],'height':video['height'],'duration':report['format'].get('duration')}
-            (artifacts/'result.json').write_text(json.dumps(result,indent=2)+'\n',encoding='utf-8')
-            print(json.dumps(result))
         except Exception as error:
             # This profile, queue and video are created by this test. Never dump URLs,
             # environment variables or arbitrary engine output into CI artifacts.
             failure={'error':str(error)[:500],'statusHistory':status_history,'httpRequests':request_counts}
-            if trace_dir:failure['workerStartup']=worker_startup_diagnostics(trace_dir)
             database=base/'queue.sqlite'
             if database.is_file():
                 try:
@@ -381,13 +351,12 @@ def main():
             print('Acceptance failure diagnostics:',json.dumps(failure),flush=True)
             raise
         finally:
+            release_close.set()
             if driver:
                 with contextlib.suppress(Exception):driver.quit()
             try:
                 stop_staged_processes(root,app)
             finally:
-                if trace_dir:
-                    (artifacts/'worker-startup.json').write_text(json.dumps(worker_startup_diagnostics(trace_dir),indent=2)+'\n',encoding='utf-8')
                 server.shutdown();server.server_close();thread.join(timeout=5)
                 if registry_written:
                     try:
@@ -395,6 +364,8 @@ def main():
                         if current==str(native):winreg.DeleteKey(winreg.HKEY_CURRENT_USER,KEY)
                         else:raise RuntimeError('Native-host registration changed during the test; it was preserved.')
                     except FileNotFoundError:pass
+    (artifacts/'result.json').write_text(json.dumps(result,indent=2)+'\n',encoding='utf-8')
+    print(json.dumps(result))
     return 0
 
 if __name__=='__main__':raise SystemExit(main())

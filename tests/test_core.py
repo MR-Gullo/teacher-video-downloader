@@ -21,6 +21,11 @@ class Core(unittest.TestCase):
  def test_atomic_batch(self):
   with self.assertRaises(ValueError):core.handle({'op':'enqueue','jobs':[{'url':'https://good.com'},{'url':'file:///bad'}]},False)
   self.assertEqual(core.handle({'op':'status'},False)['jobs'],[])
+ def test_windows_worker_requests_permitted_job_breakaway(self):
+  with patch.object(core.sys,'platform','win32'),patch.object(core.subprocess,'CREATE_NEW_PROCESS_GROUP',0x200,create=True),patch.object(core.subprocess,'DETACHED_PROCESS',0x8,create=True),patch.object(core.subprocess,'CREATE_BREAKAWAY_FROM_JOB',0x1000000,create=True),patch.object(core.subprocess,'Popen') as spawn:
+   core.ensure_worker();self.assertEqual(spawn.call_args.kwargs['creationflags'],0x1000208)
+   spawn.side_effect=PermissionError()
+   with self.assertRaisesRegex(ValueError,'job remains queued'):core.ensure_worker()
  def test_reveal_only_recorded_completed_media(self):
   result=core.handle({'op':'enqueue','jobs':[{'url':'https://example.com/video'}]},False);id=result['jobs'][0]['id']
   with self.assertRaisesRegex(ValueError,'No completed download'):core.handle({'op':'reveal','id':id},False)
