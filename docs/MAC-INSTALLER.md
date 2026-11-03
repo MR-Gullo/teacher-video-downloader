@@ -57,6 +57,8 @@ The self-contained N binaries for all three targets embed .NET 10.0.9. `scripts/
 
 Intel CI found that Google's generated Git archive changes compressed bytes between requests, although all 1,445 source files were identical. The lock now uses the static `libaom-3.14.1.tar.gz` release archive linked by AOMedia. Its SHA-256 is `44bf90dbd23e734d50e70a8c41c285193922938bd0d3bc2ee56764d181d55ef5`. A fresh fetch passes the hash check, and every source file matches the previous archive. Earlier source builds remain retained as evidence. [AOMedia release and archive](https://aomedia.org/blog%20posts/AOMedia-Announces-Availability-of-Libaom-v3_14/).
 
+The replacement archive also completes a fresh Apple Silicon FFmpeg build. The sealed companion built at clean source `a4e2c0e` passes the full bundled-tool, native-doctor, AV1-to-H.264/AAC and decode check. Evidence is `.scratch/mac-installer-20261103/a4e2c0e/sealed-arm64-check.json`. The earlier `af352d8` outer native installer also passes isolated installation, idempotent reinstall and unchanged-seal checks in `af352d8/outer-native-check.json`. Both generations remain test candidates with ad hoc signatures. Intel CI requires another run with the archive repair.
+
 ## Verification and release boundary
 
 ```sh
