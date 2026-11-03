@@ -7,7 +7,7 @@ class Worker(unittest.TestCase):
  def test_clip_duration_mismatch_never_publishes(self):
   with tempfile.TemporaryDirectory() as d:
    root=Path(d);core.STATE=root;worker.STATE=root;worker.OUTPUT=root/'out';db=core.setup()
-   url='https://www.youtube.com/watch?v=abcdefghijk';core.handle({'op':'enqueue','jobs':[{'url':url,'clip':{'start':2,'end':6,'duration':10},'captions':False}]},False);row=db.execute('SELECT * FROM jobs').fetchone()
+   url='https://www.youtube.com/watch?v=abcdefghijk';core.handle({'op':'enqueue-clip','jobs':[{'url':url,'clip':{'start':2,'end':6,'duration':10},'captions':False}]},False);row=db.execute('SELECT * FROM jobs').fetchone()
    dest=root/'jobs'/row['id']/'standard-output.mp4';info={'format':{'duration':'10'},'streams':[{'codec_type':'video','width':640,'height':360,'avg_frame_rate':'25/1'},{'codec_type':'audio'}]}
    def run(db,id,argv,lockfd,*args,**kwargs):
     if argv[0]=='yt-dlp':(root/'jobs'/id/'source.mp4').write_bytes(b'fixture')

@@ -3,7 +3,7 @@ const api = globalThis.browser || chrome;
 const HOST = 'org.teacher.video_downloader';
 api.runtime.onMessage.addListener((message, sender, respond) => {
   if (sender.id !== api.runtime.id || !sender.url?.startsWith(api.runtime.getURL('')) || sender.incognito || sender.tab?.incognito || message?.type !== 'native') return false;
-  const allowed = ['status','enqueue','pause','resume','cancel','retry','doctor','resolve','reveal'];
+  const allowed = ['status','enqueue','enqueue-clip','pause','resume','resume-clip','cancel','retry','retry-clip','doctor','resolve','reveal'];
   if (!allowed.includes(message.request?.op)) { respond({ok:false,error:'Unknown command'}); return false; }
   (async()=>{
     if(api.runtime.getManifest().browser_specific_settings?.gecko){

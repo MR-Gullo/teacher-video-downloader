@@ -47,7 +47,7 @@ class ClipIntegration(unittest.TestCase):
    try:
     with patch.object(core,'STATE',root/'state'),patch.object(worker,'STATE',root/'state'),patch.object(worker,'OUTPUT',root/'out'):
      db=core.setup();url='https://www.youtube.com/watch?v=abcdefghijk'
-     core.handle({'op':'enqueue','jobs':[{'url':url,'clip':{'start':2,'end':6,'duration':10},'captions':False}]},False)
+     core.handle({'op':'enqueue-clip','jobs':[{'url':url,'clip':{'start':2,'end':6,'duration':10},'captions':False}]},False)
      row=db.execute('SELECT * FROM jobs').fetchone();real=worker.engine_argv
      def local_argv(*args,**kwargs):
       argv=real(*args,**kwargs);argv[-1]=f'http://127.0.0.1:{server.server_port}/fixture.mp4';return argv

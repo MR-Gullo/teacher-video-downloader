@@ -191,10 +191,12 @@ def handle(req, start=True):
         return {'ok':True,'url':found}
     db=setup();result={'ok':True}
     try:
-        if op=='enqueue':
+        if op in ('enqueue','enqueue-clip'):
             jobs=req.get('jobs',[])
             if not isinstance(jobs,list) or not 1<=len(jobs)<=50: raise ValueError('Choose 1–50 videos at a time')
             jobs=[normalize(j) for j in jobs]
+            if op=='enqueue-clip' and any('clip' not in j for j in jobs):raise ValueError('Every clip job must include a valid clip range.')
+            if op=='enqueue' and any('clip' in j for j in jobs):raise ValueError('Clip jobs must use the clip command.')
             db.execute('BEGIN IMMEDIATE')
             if db.execute('SELECT count(*) FROM jobs').fetchone()[0]+len(jobs)>MAX_JOBS: raise ValueError('Queue history limit reached (500); archive the local queue before adding more')
             job_ids=[]
@@ -203,13 +205,16 @@ def handle(req, start=True):
                 db.execute('INSERT OR IGNORE INTO jobs(id,fingerprint,data,status,created) VALUES(?,?,?,?,?)',(uuid.uuid4().hex,fingerprint,json.dumps(d),'queued',time.time()))
                 job_ids.append(db.execute('SELECT id FROM jobs WHERE fingerprint=?',(fingerprint,)).fetchone()[0])
             db.commit();result['jobIds']=job_ids
-        elif op in ('pause','resume','cancel','retry'):
+        elif op in ('pause','resume','cancel','retry','resume-clip','retry-clip'):
             id=req.get('id');r=db.execute('SELECT status,data FROM jobs WHERE id=?',(id,)).fetchone()
             if not r: raise ValueError('Job not found')
-            current=r[0]
+            current=r[0];stored=json.loads(r['data']);action=op.removesuffix('-clip')
+            if action in ('resume','retry'):
+                if ('clip' in stored)!=op.endswith('-clip'):raise ValueError('Use the matching clip or video command for this job.')
+                if 'clip' in stored:normalize(stored)
             if op=='pause' and current in ('queued','running','retrying','processing'): update(db,id,status='paused',message='Paused; partial files retained')
             elif op=='cancel' and current not in ('complete','complete-warning'): update(db,id,status='cancelled',message='Cancelled; partial files retained')
-            elif op in ('resume','retry') and current in ('paused','failed','cancelled','retrying'): update(db,id,status='queued',attempts=0,next_at=0,message=('Restart queued; files retained, but N may re-download segments' if json.loads(r['data'])['engine']=='n' else 'Queued using existing partial files'))
+            elif action in ('resume','retry') and current in ('paused','failed','cancelled','retrying'): update(db,id,status='queued',attempts=0,next_at=0,message=('Restart queued; files retained, but N may re-download segments' if stored['engine']=='n' else 'Queued using existing partial files'))
         elif op=='reveal':
             row=db.execute('SELECT status,files FROM jobs WHERE id=?',(req.get('id'),)).fetchone()
             if not row or row['status'] not in ('complete','complete-warning'):raise ValueError('No completed download is available to show.')
@@ -222,7 +227,7 @@ def handle(req, start=True):
         elif op=='doctor':result['doctor']=doctor()
         elif op!='status':raise ValueError('Unknown operation')
         result['jobs']=status(db)
-        needs_worker=start and op in ('enqueue','resume','retry','status') and bool(db.execute("SELECT 1 FROM jobs WHERE status IN ('queued','retrying') LIMIT 1").fetchone())
+        needs_worker=start and op in ('enqueue','enqueue-clip','resume','retry','resume-clip','retry-clip','status') and bool(db.execute("SELECT 1 FROM jobs WHERE status IN ('queued','retrying') LIMIT 1").fetchone())
     finally:db.close()
     if needs_worker:ensure_worker()
     return result

@@ -16,13 +16,17 @@ class Core(unittest.TestCase):
   base={'url':url,'pageUrl':url,'clip':clip,'captions':True}
   normalized=core.normalize(base);self.assertEqual(normalized['engine'],'yt-dlp');self.assertEqual(normalized['clip'],clip)
   argv=core.engine_argv(normalized,Path('/tmp/job'));self.assertEqual(argv[argv.index('--download-sections')+1],'*10-20');self.assertIn('--force-keyframes-at-cuts',argv);self.assertNotIn('--write-subs',argv)
-  first=core.handle({'op':'enqueue','jobs':[base]},False)['jobIds'][0]
-  self.assertEqual(core.handle({'op':'enqueue','jobs':[base]},False)['jobIds'][0],first)
-  core.handle({'op':'pause','id':first},False);resumed=core.handle({'op':'resume','id':first},False)
+  first=core.handle({'op':'enqueue-clip','jobs':[base]},False)['jobIds'][0]
+  self.assertEqual(core.handle({'op':'enqueue-clip','jobs':[base]},False)['jobIds'][0],first)
+  core.handle({'op':'pause','id':first},False)
+  with self.assertRaisesRegex(ValueError,'matching clip'):core.handle({'op':'resume','id':first},False)
+  resumed=core.handle({'op':'resume-clip','id':first},False)
   self.assertEqual(next(x for x in resumed['jobs'] if x['id']==first)['clip'],clip)
-  other=core.handle({'op':'enqueue','jobs':[dict(base,clip=dict(clip,end=21))]},False)['jobIds'][0]
+  other=core.handle({'op':'enqueue-clip','jobs':[dict(base,clip=dict(clip,end=21))]},False)['jobIds'][0]
   full=core.handle({'op':'enqueue','jobs':[{'url':url}]},False)['jobIds'][0]
   self.assertEqual(len({first,other,full}),3)
+  with self.assertRaisesRegex(ValueError,'clip command'):core.handle({'op':'enqueue','jobs':[base]},False)
+  with self.assertRaisesRegex(ValueError,'Every clip job'):core.handle({'op':'enqueue-clip','jobs':[{'url':url}]},False)
   for invalid in ({'start':True,'end':20,'duration':120},{'start':float('nan'),'end':20,'duration':120},{'start':0,'end':float('inf'),'duration':120},{'start':10**1000,'end':20,'duration':120},{'start':-1,'end':20,'duration':120},{'start':20,'end':20,'duration':120},{'start':10,'end':121,'duration':120},{'start':10,'end':20}):
    with self.subTest(invalid=invalid),self.assertRaises(ValueError):core.normalize(dict(base,clip=invalid))
   for changes in ({'url':'https://example.com/video'},{'pageUrl':'https://www.youtube.com/watch?v=zyxwvutsrqp'},{'engine':'n'},{'audio':True},{'outputFormat':'original'},{'url':'https://youtube.com.evil.example/watch?v=abcdefghijk'}):
