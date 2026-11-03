@@ -103,8 +103,9 @@ def assemble(target, version, firefox_id, cache, output, ffmpeg_build=None, wind
             shutil.copyfile(ffmpeg_build / 'SOURCE-LOCK.json', sources / 'SOURCE-LOCK.json')
             shutil.copyfile(next((ffmpeg_build / 'ffmpeg').rglob('COPYING.GPLv2')), notices / 'FFmpeg-GPLv2.txt')
             shutil.copyfile(next((ffmpeg_build / 'x264').rglob('COPYING')), notices / 'x264-GPLv2.txt')
-            shutil.copyfile(ffmpeg_build / 'aom/LICENSE', notices / 'AOM-LICENSE.txt')
-            shutil.copyfile(ffmpeg_build / 'aom/PATENTS', notices / 'AOM-PATENTS.txt')
+            aom_source = ffmpeg_build / 'aom' / ('libaom-' + lock['aom-source']['version'])
+            shutil.copyfile(aom_source / 'LICENSE', notices / 'AOM-LICENSE.txt')
+            shutil.copyfile(aom_source / 'PATENTS', notices / 'AOM-PATENTS.txt')
         installer = payload / 'installer'; installer.mkdir()
         shutil.copyfile(Path(__file__).with_name('install_payload.py'), installer / 'install_payload.py')
         if windows:

@@ -82,12 +82,12 @@
       "verification": "Official source commit archive via HTTPS, pinned content SHA-256"
     },
     "aom-source": {
-      "filename": "aom-3.14.1.tar.gz",
-      "url": "https://aomedia.googlesource.com/aom/+archive/refs/tags/v3.14.1.tar.gz",
-      "sha256": "676aabe99ae3680eaf4e1b32749aa7021bde211223984428536481addee86e1f",
+      "filename": "libaom-3.14.1.tar.gz",
+      "url": "https://storage.googleapis.com/aom-releases/libaom-3.14.1.tar.gz",
+      "sha256": "44bf90dbd23e734d50e70a8c41c285193922938bd0d3bc2ee56764d181d55ef5",
       "version": "3.14.1",
-      "upstream": "https://aomedia.googlesource.com/aom/+archive/refs/tags/v3.14.1.tar.gz",
-      "verification": "Official release-tagged HTTPS content, pinned SHA-256"
+      "upstream": "https://aomedia.org/blog%20posts/AOMedia-Announces-Availability-of-Libaom-v3_14/",
+      "verification": "Official publisher release tarball, pinned SHA-256; all 1445 file contents match official v3.14.1 Git source archive"
     },
     "n-license": {
       "filename": "N-LICENSE.txt",
