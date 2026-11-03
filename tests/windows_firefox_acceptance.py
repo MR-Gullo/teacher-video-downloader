@@ -77,6 +77,55 @@ time.sleep(120)
         if parent.stderr:parent.stderr.close()
 
 
+def check_packaged_worker(runtime, companion, tools, root, url):
+    """Start the shipped worker against a separate, synthetic queue."""
+    state=root/'direct-worker-state';output=root/'direct-worker-output'
+    env=os.environ.copy();env.pop('PYTHONHOME',None);env.pop('PYTHONPATH',None)
+    env.update(TVD_STATE_DIR=str(state),YTDL_OUTPUT_DIR=str(output),PATH=str(tools)+os.pathsep+env.get('PATH',''))
+    script=("import json,sys;sys.path.insert(0,sys.argv[1]);import core;"
+            "core.handle({'op':'enqueue','jobs':[{'url':sys.argv[2],'captions':False,'outputFormat':'standard'}]},False)")
+    subprocess.run([str(runtime),'-B','-c',script,str(companion),url],env=env,check=True,capture_output=True,timeout=15)
+    worker=subprocess.Popen([str(runtime),'-B',str(companion/'worker.py')],env=env,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
+    try:
+        deadline=time.monotonic()+25
+        while time.monotonic()<deadline:
+            with contextlib.closing(sqlite3.connect(state/'queue.sqlite',timeout=3)) as db:
+                row=db.execute('SELECT status,attempts FROM jobs').fetchone()
+            if row and row[1]>0:
+                print('Packaged worker started a queued job:',row[0],flush=True)
+                return
+            if worker.poll() is not None:
+                error=worker.stderr.read().decode('utf-8','replace')
+                # The isolated probe contains only a synthetic URL. Report just the
+                # exception class, never arbitrary engine output or local paths.
+                last=error.strip().splitlines()[-1] if error.strip() else ''
+                category=last.split(':',1)[0] if last and len(last.split(':',1)[0])<80 else 'none'
+                raise RuntimeError(f'Packaged worker exited before starting a job (exit {worker.returncode}; error {category}).')
+            time.sleep(.2)
+        raise RuntimeError('Packaged worker did not start its isolated queued job within 25 seconds.')
+    finally:
+        if worker.poll() is None:worker.terminate()
+        try:worker.wait(timeout=15)
+        except subprocess.TimeoutExpired:worker.kill();worker.wait(timeout=15)
+        worker.stderr.close()
+
+
+def stop_staged_processes(root, app):
+    """Stop only executables inside this test's unique staged installation."""
+    if not app.resolve().is_relative_to(root.resolve()) or not app.is_dir():
+        raise RuntimeError('Refusing process cleanup outside the disposable staging root.')
+    env=os.environ.copy();env['LESSONSHELF_TEST_APP']=str(app.resolve())
+    script=r'''$prefix = $env:LESSONSHELF_TEST_APP + '\'
+$deadline = (Get-Date).AddSeconds(15)
+do {
+  $owned = @(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) })
+  foreach ($process in $owned) { Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue }
+  if ($owned.Count -gt 0) { Start-Sleep -Milliseconds 250 }
+} while ($owned.Count -gt 0 -and (Get-Date) -lt $deadline)
+if ($owned.Count -gt 0) { exit 1 }'''
+    subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-Command',script],env=env,check=True,timeout=25,capture_output=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--payload', required=True, type=Path)
@@ -156,6 +205,8 @@ def main():
         thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
         registry_written=False;driver=None;status_history=[]
         try:
+            check_packaged_worker(app/'runtime/python.exe',app/'companion',app/'tools',root,f'http://127.0.0.1:{server.server_port}/sample.mp4')
+            request_counts.update(HEAD=0,GET=0)
             with winreg.CreateKey(winreg.HKEY_CURRENT_USER,KEY) as key:
                 winreg.SetValueEx(key,'',0,winreg.REG_SZ,str(native))
             registry_written=True
@@ -191,7 +242,7 @@ def main():
             allowed=driver.execute_async_script("let done=arguments[arguments.length-1];browser.permissions.contains({data_collection:['browsingActivity','websiteContent']}).then(done,()=>done(false));")
             print('Firefox companion permission granted:',allowed,flush=True)
             if not allowed:raise RuntimeError('Firefox did not grant the expected extension permission; test did not enqueue.')
-            observed_progress=False;deadline=time.monotonic()+180
+            observed_progress=False;deadline=time.monotonic()+180;queued_since=None
             while time.monotonic()<deadline:
                 status=driver.find_element(By.ID,'status').text
                 if not status_history or status_history[-1]!=status:
@@ -200,6 +251,16 @@ def main():
                 observed_progress |= progress.is_displayed()
                 if 'Saved' in status:break
                 if any(x in status.lower() for x in ('could not','failed','not connected','did not respond')):raise RuntimeError('Download failed: '+status)
+                database=base/'queue.sqlite'
+                if database.is_file():
+                    try:
+                        with contextlib.closing(sqlite3.connect('file:'+database.as_posix()+'?mode=ro',uri=True,timeout=3)) as db:
+                            row=db.execute('SELECT status,attempts FROM jobs ORDER BY created LIMIT 1').fetchone()
+                    except sqlite3.OperationalError:row=None
+                    if row and row==('queued',0):
+                        if queued_since is None:queued_since=time.monotonic()
+                        elif time.monotonic()-queued_since>25:raise RuntimeError('Firefox queued the test job, but its worker did not start within 25 seconds.')
+                    else:queued_since=None
                 time.sleep(.1)
             else:raise RuntimeError('Timed out waiting for an actual saved download.')
             if not observed_progress:raise RuntimeError('No progress indicator was observed during the local transfer.')
@@ -250,7 +311,7 @@ def main():
             database=base/'queue.sqlite'
             if database.is_file():
                 try:
-                    with sqlite3.connect('file:'+database.as_posix()+'?mode=ro',uri=True,timeout=3) as db:
+                    with contextlib.closing(sqlite3.connect('file:'+database.as_posix()+'?mode=ro',uri=True,timeout=3)) as db:
                         rows=db.execute('SELECT status, progress, attempts FROM jobs ORDER BY created').fetchall()
                     failure['jobs']=[{'status':status,'progress':progress,'attempts':attempts} for status,progress,attempts in rows]
                 except Exception as diagnostic_error:failure['queueReadError']=type(diagnostic_error).__name__
@@ -264,13 +325,16 @@ def main():
         finally:
             if driver:
                 with contextlib.suppress(Exception):driver.quit()
-            server.shutdown();server.server_close();thread.join(timeout=5)
-            if registry_written:
-                try:
-                    with winreg.OpenKey(winreg.HKEY_CURRENT_USER,KEY) as key:current=winreg.QueryValueEx(key,'')[0]
-                    if current==str(native):winreg.DeleteKey(winreg.HKEY_CURRENT_USER,KEY)
-                    else:raise RuntimeError('Native-host registration changed during the test; it was preserved.')
-                except FileNotFoundError:pass
+            try:
+                stop_staged_processes(root,app)
+            finally:
+                server.shutdown();server.server_close();thread.join(timeout=5)
+                if registry_written:
+                    try:
+                        with winreg.OpenKey(winreg.HKEY_CURRENT_USER,KEY) as key:current=winreg.QueryValueEx(key,'')[0]
+                        if current==str(native):winreg.DeleteKey(winreg.HKEY_CURRENT_USER,KEY)
+                        else:raise RuntimeError('Native-host registration changed during the test; it was preserved.')
+                    except FileNotFoundError:pass
     return 0
 
 if __name__=='__main__':raise SystemExit(main())
