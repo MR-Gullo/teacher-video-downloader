@@ -26,7 +26,9 @@ The runtime can inspect `app/payload.json` and `app/PROVENANCE.json` for install
 | Mac Intel | `8d4ce04c28f0fa9e2aea9c53af2a5895882f353e12425c5c3fcafaa4370a216a` |
 | Windows x64 | `35e7c16983f0315bba2a3f37dc392fdfa074be614c8effb642b78376b18ba272` |
 
-The current pinned N release lacks some flags expected by the old generic runtime path. Its known-build compatibility route must be integrated by the runtime owner. A receipt alone must not force an available status or skip per-video checks.
+Code signing changes Mac executable bytes. `PROVENANCE.json` retains `toolSourceSHA256` from verified upstream inputs. Recompute `payload.json` file hashes after signing, but preserve these source hashes. The runtime owner must account for the signed-file receipt when identifying the approved build.
+
+The runtime recognizes these verified source binaries and still checks required help options and each video. The signing path needs the signed-file receipt integration described above. A receipt alone must not force an available status or skip per-video checks.
 
 ## Reproducible local build
 
@@ -41,6 +43,8 @@ rtk proxy python3 scripts/macos/build_installer.py --payload .scratch/mac-instal
 
 For Intel, build FFmpeg with architecture `x86_64`, assemble target `macos-x64` and use distinct output paths. Swift can cross-compile the Intel app on Apple Silicon, but the builder does not run Intel code through Rosetta or claim Intel runtime validation. The builder inspects every Mach-O object's architecture.
 
+Mac yt-dlp uses the official universal Python zipapp with a small launcher into bundled CPython. It avoids a second embedded Python runtime and PyInstaller extraction. Windows keeps the official standalone executable.
+
 The dependency lock pins CPython 3.13.18 from the official Astral Python Build Standalone release 20261026, yt-dlp 2026.10.26 and N_m3u8DL-RE 0.6.0-beta. Astral's runtime is a maintained relocatable CPython build, not a Python Software Foundation installer. Its full distribution supplies transitive license notices and licensing metadata. All archive hashes match upstream release metadata. Mac FFmpeg 9.0.2 is built with pinned upstream x264 and AOM 3.14.1 sources. Its detached signature verified against the fingerprint published on ffmpeg.org. The bundle includes the source archives, build commands and applicable notices. [Python Build Standalone](https://github.com/astral-sh/python-build-standalone), [FFmpeg downloads and verification](https://ffmpeg.org/download.html), [yt-dlp releases](https://github.com/yt-dlp/yt-dlp/releases), [N releases](https://github.com/nilaoda/N_m3u8DL-RE/releases).
 
 ## Verification and release boundary
@@ -52,7 +56,7 @@ rtk proxy python3 scripts/macos/verify_payload.py --payload .scratch/mac-install
 
 The 19 focused tests passed on this Apple Silicon Mac. They cover staging, hash and platform rejection, links, existing-install preservation, active locks, idempotent reinstall, retained upgrade evidence, rollback, custom output preservation, native framing and Mac app packaging. The Windows registry projection test proves portable transaction logic only.
 
-The real payload checker runs bundled Python and all four tools, stages installation, checks the native doctor, creates AV1/AAC synthetic media, converts it to H.264/AAC MP4 and decodes the result. It records failures as failures. The initial sandbox run could not start yt-dlp's PyInstaller semaphore. The named staging checker received explicit tool approval, and the real tools then ran successfully. No OS security setting or quarantine attribute changed. The current runtime's N recognition still prevents an all-green native doctor until its owner integrates the pinned build.
+The real payload checker runs bundled Python and all four tools, stages installation, checks the native doctor, creates AV1/AAC synthetic media, converts it to H.264/AAC MP4 and decodes the result. It records failures as failures. The initial sandbox run could not start yt-dlp's PyInstaller semaphore. The named staging checker received explicit tool approval, and the real tools then ran successfully. No OS security setting or quarantine attribute changed. The current Apple Silicon zipapp payload passes the complete checker, including all four doctor availability checks, native framing, AV1-to-H.264/AAC conversion and full decode. The earlier failure report remains retained as prior staging evidence.
 
 Before release, rebuild from the reviewed integrated source commit, complete native Apple Silicon, Intel and Windows tests, and check the actual installer UI and browser download flow. The app window and normal Gatekeeper path have not been verified. Windows corresponding-source review and Authenticode checks remain explicit gates.
 

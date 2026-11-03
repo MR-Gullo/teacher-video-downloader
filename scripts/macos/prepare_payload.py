@@ -38,7 +38,7 @@ def assemble(target, version, firefox_id, cache, output, ffmpeg_build=None, wind
         raise ValueError('Refusing to replace an existing payload')
     lock = json.loads(Path(__file__).with_name('dependencies.lock.json').read_text())['packages']
     windows = target == 'windows-x64'
-    keys = ['python-' + target, 'n-' + target, 'ytdlp-windows-x64' if windows else 'ytdlp-macos-universal', 'n-license', 'ytdlp-license', 'ytdlp-third-party']
+    keys = ['python-' + target, 'n-' + target, 'ytdlp-windows-x64' if windows else 'ytdlp-python', 'n-license', 'ytdlp-license', 'ytdlp-third-party']
     keys += ['python-licenses-' + target]
     keys += ['ffmpeg-windows-x64'] if windows else ['ffmpeg-source', 'x264-source', 'aom-source']
     for key in keys:
@@ -60,7 +60,11 @@ def assemble(target, version, firefox_id, cache, output, ffmpeg_build=None, wind
         shutil.copytree(ROOT / 'companion', payload / 'companion', ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
         tools = payload / 'tools'; tools.mkdir()
         ext = '.exe' if windows else ''
-        shutil.copyfile(cache / lock[keys[2]]['filename'], tools / ('yt-dlp' + ext))
+        if windows:
+            shutil.copyfile(cache / lock[keys[2]]['filename'], tools / 'yt-dlp.exe')
+        else:
+            shutil.copyfile(cache / lock[keys[2]]['filename'], tools / 'yt-dlp.pyz')
+            (tools / 'yt-dlp').write_text('#!/bin/sh\nHERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P) || exit 1\nexec "$HERE/../runtime/bin/python3" -B -I "$HERE/yt-dlp.pyz" "$@"\n')
         n = work / 'n'
         extract(cache / lock['n-' + target]['filename'], n)
         shutil.copyfile(next(n.rglob('N_m3u8DL-RE' + ext)), tools / ('N_m3u8DL-RE' + ext))
@@ -106,8 +110,8 @@ def assemble(target, version, firefox_id, cache, output, ffmpeg_build=None, wind
         else:
             for path in tools.iterdir(): path.chmod(0o755)
         (payload / 'LICENSES.txt').write_text('LessonShelf bundles CPython from Astral Python Build Standalone, yt-dlp, FFmpeg/ffprobe and N_m3u8DL-RE.\nSee licenses/, the Python runtime LICENSE.txt, PROVENANCE.json and sources/ where present.\nWindows FFmpeg uses upstream yt-dlp FFmpeg-Builds. Its complete corresponding-source distribution must be reviewed before public release.\n')
-        provenance = {'generatedAt': datetime.now(timezone.utc).isoformat(), 'target': target, 'dependencies': {key: lock[key] for key in keys},
-                      'sourceProject': str(ROOT), 'sourceCommit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
+        provenance = {'toolSourceSHA256': {path.name: sha(path) for path in tools.iterdir() if path.is_file()}, 'generatedAt': datetime.now(timezone.utc).isoformat(), 'target': target, 'dependencies': {key: lock[key] for key in keys},
+                      'sourceProject': ROOT.name, 'sourceCommit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
                       'sourceDirty': subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT, text=True).splitlines(),
                       'productionReleaseApproved': False, 'windowsCorrespondingSourceReviewed': False if windows else None}
         (payload / 'PROVENANCE.json').write_text(json.dumps(provenance, indent=2) + '\n')

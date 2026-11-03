@@ -57,14 +57,6 @@
       "upstream": "https://github.com/yt-dlp/yt-dlp/releases/tag/2026.10.26",
       "verification": "GitHub upstream release asset SHA-256"
     },
-    "ytdlp-macos-universal": {
-      "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.10.26/yt-dlp_macos",
-      "sha256": "0f922c15ccc0b83eefa1c8bc9104e434318c4bf16e408e1ee93b7745a6efe0aa",
-      "filename": "yt-dlp_macos",
-      "version": "2026.10.26",
-      "upstream": "https://github.com/yt-dlp/yt-dlp/releases/tag/2026.10.26",
-      "verification": "GitHub upstream release asset SHA-256"
-    },
     "ffmpeg-windows-x64": {
       "url": "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/autobuild-2026-11-02-22-51/ffmpeg-N-128340-gf80a436ffd-win64-gpl.zip",
       "sha256": "91adc75f861c9b1252fe0911fae527763693fa0ffc0ed247cbc9b2be8118b1ce",
@@ -144,6 +136,14 @@
       "version": "20261026",
       "upstream": "https://github.com/astral-sh/python-build-standalone/releases/tag/20261026",
       "verification": "Official Astral full-distribution release asset SHA-256; licensing metadata and notices only are packaged"
+    },
+    "ytdlp-python": {
+      "filename": "yt-dlp.pyz",
+      "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.10.26/yt-dlp",
+      "sha256": "e51e69e89489f199530f13d32a4342da3ddb2cf34842f364603a066db05afbf3",
+      "version": "2026.10.26",
+      "upstream": "https://github.com/yt-dlp/yt-dlp/releases/tag/2026.10.26",
+      "verification": "Official universal Python zipapp release asset SHA-256"
     }
   }
 }

@@ -76,7 +76,7 @@ def build(payload, output):
         (resources / 'BUILD.json').write_text(json.dumps(dict(architecture=architecture, executableSHA256=digest,
             signedForDistribution=False, notarized=False, macNativeDryRun=architecture == platform.machine(),
             generatedAt=datetime.now(timezone.utc).isoformat(), purpose='Local staging review only',
-            sourceProject=str(Path(__file__).resolve().parents[2]),
+            sourceProject=Path(__file__).resolve().parents[2].name,
             sourceCommit=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=Path(__file__).parent, text=True).strip(),
             sourceDirty=subprocess.check_output(['git', 'status', '--porcelain'], cwd=Path(__file__).parent, text=True).splitlines(),
             payloadManifestSHA256=hashlib.sha256((resources / 'payload/payload.json').read_bytes()).hexdigest()), indent=2) + '\n')
