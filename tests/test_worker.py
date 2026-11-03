@@ -4,6 +4,18 @@ from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'companion'))
 import core,worker
 class Worker(unittest.TestCase):
+ def test_clip_duration_mismatch_never_publishes(self):
+  with tempfile.TemporaryDirectory() as d:
+   root=Path(d);core.STATE=root;worker.STATE=root;worker.OUTPUT=root/'out';db=core.setup()
+   url='https://www.youtube.com/watch?v=abcdefghijk';core.handle({'op':'enqueue','jobs':[{'url':url,'clip':{'start':2,'end':6,'duration':10},'captions':False}]},False);row=db.execute('SELECT * FROM jobs').fetchone()
+   dest=root/'jobs'/row['id']/'standard-output.mp4';info={'format':{'duration':'10'},'streams':[{'codec_type':'video','width':640,'height':360,'avg_frame_rate':'25/1'},{'codec_type':'audio'}]}
+   def run(db,id,argv,lockfd,*args,**kwargs):
+    if argv[0]=='yt-dlp':(root/'jobs'/id/'source.mp4').write_bytes(b'fixture')
+    if argv[0]=='encode':dest.write_bytes(b'wrong duration')
+    return 0
+   with patch.object(worker,'run',side_effect=run),patch.object(worker,'probe',return_value=info),patch.object(worker,'standard_plan',return_value=(['encode'],dest,info)),patch.object(worker,'validate_copy',return_value=True):
+    with self.assertRaisesRegex(RuntimeError,'not published'):worker.process(db,row,1)
+   self.assertFalse((root/'out').exists());self.assertEqual(db.execute('SELECT files FROM jobs').fetchone()[0],'[]');db.close()
  def test_legacy_job_keeps_provenance_private_on_retry(self):
   with tempfile.TemporaryDirectory() as d:
    root=Path(d);core.STATE=root;worker.STATE=root;worker.OUTPUT=root/'output';db=core.setup()

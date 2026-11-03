@@ -2,6 +2,7 @@
 import hashlib, json, os, re, select, shutil, signal, subprocess, sys, tempfile, time
 if sys.platform!='win32':import fcntl
 from pathlib import Path
+from fractions import Fraction
 from urllib.parse import urlsplit
 from core import APP, STATE, OUTPUT, setup, update, engine_argv, safe_name, find_n
 from media import probe, copy_plan, validate_copy, standard_plan
@@ -140,6 +141,7 @@ def publish(src,folder,prefix):
     raise RuntimeError('Too many filename collisions')
 
 def choose_engine(d):
+    if d.get('clip'):return 'yt-dlp'
     if d.get('engine')!='auto':return d['engine']
     if not d.get('verifiedManifest'):return 'yt-dlp'
     path,known=find_n()
@@ -185,6 +187,21 @@ def source_is_silent(d):
             if not any(x.get('codec_type')=='video' for x in streams) or any(x.get('codec_type')=='audio' for x in streams):return False
         return True
     except (OSError,subprocess.TimeoutExpired,ValueError,TypeError):return False
+
+def clip_duration_ok(info,clip):
+    try:
+        duration=float(info.get('format',{}).get('duration',0))
+        video=next(s for s in info['streams'] if s.get('codec_type')=='video')
+        fps=float(Fraction(video.get('avg_frame_rate') or video.get('r_frame_rate') or '0'))
+        if not 1<=fps<=240:return False
+        requested=clip['end']-clip['start'];tolerance=min(max(.25,2/fps+.1),requested*.05+.05)
+        if requested<clip['duration'] and duration>=clip['duration']-min(tolerance,(clip['duration']-requested)/2):return False
+        return abs(duration-requested)<=tolerance
+    except (KeyError,TypeError,ValueError,ZeroDivisionError,StopIteration,OverflowError):return False
+
+def clip_name(seconds):
+    milliseconds=round(seconds*1000);hours,milliseconds=divmod(milliseconds,3600000);minutes,milliseconds=divmod(milliseconds,60000);secs,milliseconds=divmod(milliseconds,1000)
+    return f'{hours:02d}h{minutes:02d}m{secs:02d}s{milliseconds:03d}'
 
 def process(db,r,lockfd):
     id=r['id'];d=json.loads(r['data']);work=STATE/'jobs'/id;work.mkdir(parents=True,exist_ok=True,mode=0o700)
@@ -263,7 +280,9 @@ def process(db,r,lockfd):
         if result:raise RuntimeError('Downloaded media failed sample decoding. Original retained in the local job folder.')
     if not transition(db,id,'running',status='processing',progress=99,message='Validating original and preparing classroom copy'):return
     files=[];warning='The source video has no audio.' if silent else '';warning=(warning+' ' if warning else '')+caption_warning if caption_warning else warning;course=OUTPUT/d['course'] if d['course'] else OUTPUT
+    if d.get('clip') and d['captions']:warning=(warning+' ' if warning else '')+'English captions are not included in clips.'
     prefix=f"{db.execute('SELECT count(*) FROM jobs WHERE created < ?',(r['created'],)).fetchone()[0]:02d}_{safe_name(d['title'])}_{id[:8]}"
+    if d.get('clip'):prefix+=f"_{clip_name(d['clip']['start'])}-{clip_name(d['clip']['end'])}"
     if not active(db,id,'processing'):return
     output_format=d.get('outputFormat','legacy')
     if not d['audio'] and output_format in ('standard','av1'):
@@ -286,6 +305,7 @@ def process(db,r,lockfd):
                 raise RuntimeError('MP4 validation failed; original retained in the local job folder.')
             result_info=probe(dest);result_video=next((x for x in result_info['streams'] if x.get('codec_type')=='video'),{})
             if d['quality']!='best' and (not result_video.get('width') or not result_video.get('height') or min(result_video['width'],result_video['height'])>int(d['quality'])):raise RuntimeError('Output exceeds the selected quality limit; original retained in the local job folder.')
+            if d.get('clip') and not clip_duration_ok(result_info,d['clip']):raise RuntimeError('Clip duration did not match the selected range; the file was not published.')
             if not active(db,id,'processing'):return
             files.append(publish(dest,course,prefix))
         except InterruptedError:return
@@ -315,6 +335,7 @@ def process(db,r,lockfd):
         for p in work.glob('*.srt'):p.unlink() # only remove sidecars after successful embedded result
     # Store provenance without signed query credentials.
     provenance={'source':d['pageUrl'],'engine':d['engine'],'captions_requested':d['captions']}
+    if d.get('clip'):provenance['clip']=d['clip']
     meta=work/'provenance.json';meta.write_text(json.dumps(provenance,indent=2))
     transition(db,id,'processing',status='complete-warning' if warning else 'complete',progress=100,message=warning or 'Ready for class. Original retained.',files=json.dumps(files))
 

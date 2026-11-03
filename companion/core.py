@@ -1,5 +1,5 @@
 """Local-only durable queue. No server, shell evaluation, cookie extraction or telemetry."""
-import contextlib, hashlib, json, os, re, shutil, sqlite3, struct, subprocess, sys, time, uuid
+import contextlib, hashlib, json, math, os, re, shutil, sqlite3, struct, subprocess, sys, time, uuid
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit, parse_qs, urlencode
 
@@ -38,6 +38,12 @@ def public_url(s):
         if re.fullmatch(r'[A-Za-z0-9_-]{11}',video):query=urlencode({'v':video})
     return urlunsplit((p.scheme,p.netloc,p.path,query,''))
 
+def youtube_id(url):
+    p=urlsplit(url);host=(p.hostname or '').lower();parts=p.path.strip('/').split('/')
+    if p.scheme!='https' or host not in ('youtube.com','www.youtube.com','m.youtube.com','music.youtube.com'):return None
+    value=parse_qs(p.query).get('v',[''])[0] if p.path=='/watch' else parts[1] if len(parts)==2 and parts[0]=='shorts' else ''
+    return value if re.fullmatch(r'[A-Za-z0-9_-]{11}',value) else None
+
 def normalize(j):
     if not isinstance(j,dict): raise ValueError('Invalid job')
     u=valid_url(j.get('url',''))
@@ -45,7 +51,17 @@ def normalize(j):
     if engine not in ('yt-dlp','n','auto') or quality not in ('1080','720','best') or copy not in ('none','classroom','av1') or output_format not in ('standard','original','av1'): raise ValueError('Invalid settings')
     if j.get('cookies') or j.get('headers'): raise ValueError('Authentication transfer is not enabled in this build')
     page=valid_url(j['pageUrl']) if j.get('pageUrl') else u
-    return dict(url=u,pageUrl=public_url(page),title=safe_name(j.get('title') or urlsplit(u).hostname),engine=engine,quality=quality,copy=copy,outputFormat=output_format,audio=bool(j.get('audio',False)),captions=bool(j.get('captions',True)),course=safe_name(j['course']) if j.get('course') else '',verifiedManifest=bool(j.get('verifiedManifest',False)))
+    result=dict(url=u,pageUrl=public_url(page),title=safe_name(j.get('title') or urlsplit(u).hostname),engine=engine,quality=quality,copy=copy,outputFormat=output_format,audio=bool(j.get('audio',False)),captions=bool(j.get('captions',True)),course=safe_name(j['course']) if j.get('course') else '',verifiedManifest=bool(j.get('verifiedManifest',False)))
+    clip=j.get('clip')
+    if clip is not None:
+        video_id=youtube_id(u)
+        if not isinstance(clip,dict) or set(clip)!={'start','end','duration'} or not video_id or youtube_id(page)!=video_id:raise ValueError('Clips require the same YouTube video page and URL.')
+        values=[clip[k] for k in ('start','end','duration')]
+        if any(isinstance(v,bool) or not isinstance(v,(int,float)) or abs(v)>1e9 or not math.isfinite(v) for v in values):raise ValueError('Invalid clip times.')
+        start,end,duration=values
+        if not 0<=start<end<=duration or result['audio'] or output_format!='standard' or copy!='none' or engine not in ('auto','yt-dlp'):raise ValueError('Choose a valid YouTube video clip and standard MP4 output.')
+        result.update(url='https://www.youtube.com/watch?v='+video_id,pageUrl='https://www.youtube.com/watch?v='+video_id,engine='yt-dlp',verifiedManifest=False,clip={'start':start,'end':end,'duration':duration})
+    return result
 
 def status(db):
     out=[]
@@ -227,7 +243,9 @@ def engine_argv(d,work, help_text=None):
             a+=['-f',f,'--merge-output-format','mkv']
             if q!='best':a+=['-S',f'res:{q},vcodec:h264,acodec:aac']
             else:a+=['-S','vcodec:h264,acodec:aac']
-        if d['captions'] and not d['audio']:a+=['--write-subs','--write-auto-subs','--sub-langs','en.*,en','--convert-subs','srt','--embed-subs']
+        if d.get('clip'):
+            c=d['clip'];a+=['--download-sections',f"*{c['start']}-{c['end']}",'--force-keyframes-at-cuts']
+        elif d['captions'] and not d['audio']:a+=['--write-subs','--write-auto-subs','--sub-langs','en.*,en','--convert-subs','srt','--embed-subs']
         return a+['--',d['url']]
     known=d.get('_known_n',False)
     if help_text is not None and any(f not in help_text for f in (('--disable-update-check','--write-meta-json') if known else ('--no-config','--disable-update-check','--write-meta-json','--vod-select-parts'))): raise RuntimeError('N_m3u8DL-RE version lacks required privacy controls')
