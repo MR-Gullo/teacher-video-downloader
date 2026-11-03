@@ -1,0 +1,100 @@
+name: Windows Firefox acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      signed_xpi_url:
+        description: Optional signed release XPI URL
+        required: false
+        type: string
+      signed_xpi_sha256:
+        description: SHA-256 required for a signed release XPI
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-firefox-qa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  acceptance:
+    runs-on: windows-2025
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      QA_ROOT: .scratch/windows-firefox-ci
+      SIGNED_XPI_URL: ${{ inputs.signed_xpi_url }}
+      SIGNED_XPI_SHA256: ${{ inputs.signed_xpi_sha256 }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.13'
+      - name: Record Windows and browser versions
+        run: |
+          New-Item -ItemType Directory -Force "$env:QA_ROOT/reports" | Out-Null
+          python --version
+          Get-ComputerInfo | Select-Object WindowsProductName, WindowsVersion, OsBuildNumber
+          & 'C:/Program Files/Mozilla Firefox/firefox.exe' --version
+          geckodriver --version
+          python -m pip install --disable-pip-version-check selenium==4.51.0
+          if ($LASTEXITCODE -ne 0) { throw 'Selenium installation failed' }
+      - name: Fetch and verify pinned offline dependencies
+        run: |
+          python scripts/macos/fetch_dependencies.py --cache "$env:QA_ROOT/upstream" --package python-windows-x64 --package n-windows-x64 --package ytdlp-windows-x64 --package ffmpeg-windows-x64 --package n-license --package ytdlp-license --package ytdlp-third-party
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency verification failed' }
+      - name: Build the Windows installer and payload
+        run: |
+          $version = (Get-Content extension/manifest.firefox.json | ConvertFrom-Json).version
+          python scripts/windows/build_installer.py --output "$env:QA_ROOT/launch-host.exe"
+          if ($LASTEXITCODE -ne 0) { throw 'Native launcher build failed' }
+          python scripts/macos/prepare_payload.py --target windows-x64 --version $version --firefox-id teacher-video-downloader@local.invalid --cache "$env:QA_ROOT/upstream" --windows-launcher "$env:QA_ROOT/launch-host.exe" --output "$env:QA_ROOT/payload"
+          if ($LASTEXITCODE -ne 0) { throw 'Payload assembly failed' }
+          python scripts/windows/build_installer.py --payload "$env:QA_ROOT/payload" --output "$env:QA_ROOT/LessonShelf-windows-x64.exe"
+          if ($LASTEXITCODE -ne 0) { throw 'Installer build failed' }
+          $stage = Join-Path $PWD "$env:QA_ROOT/Installer staging path"
+          $process = Start-Process "$env:QA_ROOT/LessonShelf-windows-x64.exe" -ArgumentList "--stage-root `"$stage`"" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Staged installer failed: $($process.ExitCode)" }
+      - name: Prepare the Firefox extension
+        run: |
+          $xpi = "$env:QA_ROOT/lessonshelf.xpi"
+          if ($env:SIGNED_XPI_URL) {
+            $uri = [Uri]$env:SIGNED_XPI_URL
+            $amo = $uri.Host -in @('addons.mozilla.org', 'addons.cdn.mozilla.net')
+            $release = $uri.Host -eq 'github.com' -and $uri.AbsolutePath.StartsWith('/MR-Gullo/teacher-video-downloader/releases/download/')
+            if ($uri.Scheme -ne 'https' -or (-not $amo -and -not $release) -or $env:SIGNED_XPI_SHA256 -notmatch '^[a-fA-F0-9]{64}$') { throw 'Signed XPI needs an approved HTTPS release URL and SHA-256' }
+            Invoke-WebRequest -Uri $uri -OutFile $xpi
+            if ((Get-FileHash $xpi -Algorithm SHA256).Hash -ne $env:SIGNED_XPI_SHA256) { throw 'Signed XPI hash mismatch' }
+          } else {
+            python scripts/package-firefox.py $xpi
+            if ($LASTEXITCODE -ne 0) { throw 'Temporary Firefox package build failed' }
+          }
+      - name: Run real Windows Firefox and native-host acceptance
+        run: |
+          $driver = (Get-Command geckodriver).Source
+          $parameters = @('tests/windows_firefox_acceptance.py', '--payload', "$env:QA_ROOT/payload", '--extension', "$env:QA_ROOT/lessonshelf.xpi", '--artifacts', "$env:QA_ROOT/reports", '--firefox', 'C:/Program Files/Mozilla Firefox/firefox.exe', '--geckodriver', $driver)
+          if ($env:SIGNED_XPI_URL) { $parameters += '--signed' }
+          python @parameters
+          if ($LASTEXITCODE -ne 0) { throw 'Windows Firefox acceptance failed' }
+      - name: Retain test evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-firefox-evidence
+          path: .scratch/windows-firefox-ci/reports/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Retain the installer candidate
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-installer-candidate-unsigned
+          path: |
+            .scratch/windows-firefox-ci/LessonShelf-windows-x64.exe
+            .scratch/windows-firefox-ci/LessonShelf-windows-x64.exe.json
+            .scratch/windows-firefox-ci/payload/PROVENANCE.json
+          retention-days: 7
