@@ -1,0 +1,149 @@
+{
+  "schema": 1,
+  "packages": {
+    "python-macos-arm64": {
+      "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.13.18%2B20261026-aarch64-apple-darwin-install_only_stripped.tar.gz",
+      "sha256": "8392b6ea51d94391befb2c31ebe75463f045d0b69dfcf5e1bb3234e1f5fa3405",
+      "filename": "cpython-3.13.18+20261026-aarch64-apple-darwin-install_only_stripped.tar.gz",
+      "version": "20261026",
+      "upstream": "https://github.com/astral-sh/python-build-standalone/releases/tag/20261026",
+      "verification": "GitHub upstream release asset SHA-256"
+    },
+    "python-macos-x64": {
+      "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.13.18%2B20261026-x86_64-apple-darwin-install_only_stripped.tar.gz",
+      "sha256": "7412c19d896c99431b74a18a5643e110449a7f9590fbab179c3e5ab27b9aa9e3",
+      "filename": "cpython-3.13.18+20261026-x86_64-apple-darwin-install_only_stripped.tar.gz",
+      "version": "20261026",
+      "upstream": "https://github.com/astral-sh/python-build-standalone/releases/tag/20261026",
+      "verification": "GitHub upstream release asset SHA-256"
+    },
+    "python-windows-x64": {
+      "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.13.18%2B20261026-x86_64-pc-windows-msvc-install_only_stripped.tar.gz",
+      "sha256": "7369f7a35f261222a6ac8b3a87c1c88eeebee8af945d85346202591a64038dd3",
+      "filename": "cpython-3.13.18+20261026-x86_64-pc-windows-msvc-install_only_stripped.tar.gz",
+      "version": "20261026",
+      "upstream": "https://github.com/astral-sh/python-build-standalone/releases/tag/20261026",
+      "verification": "GitHub upstream release asset SHA-256"
+    },
+    "n-macos-arm64": {
+      "url": "https://github.com/nilaoda/N_m3u8DL-RE/releases/download/v0.6.0-beta/N_m3u8DL-RE_v0.6.0-beta_osx-arm64_20260629.tar.gz",
+      "sha256": "ca181b7e8976564766c34e3cefe48fff409f58289ca970ade062668c01c53918",
+      "filename": "N_m3u8DL-RE_v0.6.0-beta_osx-arm64_20260629.tar.gz",
+      "version": "v0.6.0-beta",
+      "upstream": "https://github.com/nilaoda/N_m3u8DL-RE/releases/tag/v0.6.0-beta",
+      "verification": "GitHub upstream release asset SHA-256"
+    },
+    "n-macos-x64": {
+      "url": "https://github.com/nilaoda/N_m3u8DL-RE/releases/download/v0.6.0-beta/N_m3u8DL-RE_v0.6.0-beta_osx-x64_20260629.tar.gz",
+      "sha256": "4dab8d256ae3164557f48a3326c8fa60da99e37536ee1589ce6c841180fa8204",
+      "filename": "N_m3u8DL-RE_v0.6.0-beta_osx-x64_20260629.tar.gz",
+      "version": "v0.6.0-beta",
+      "upstream": "https://github.com/nilaoda/N_m3u8DL-RE/releases/tag/v0.6.0-beta",
+      "verification": "GitHub upstream release asset SHA-256"
+    },
+    "n-windows-x64": {
+      "url": "https://github.com/nilaoda/N_m3u8DL-RE/releases/download/v0.6.0-beta/N_m3u8DL-RE_v0.6.0-beta_win-x64_20260629.zip",
+      "sha256": "3825fd42ee502f98a9378f6fdddb2f7822709f521806214f466db6935c950f1a",
+      "filename": "N_m3u8DL-RE_v0.6.0-beta_win-x64_20260629.zip",
+      "version": "v0.6.0-beta",
+      "upstream": "https://github.com/nilaoda/N_m3u8DL-RE/releases/tag/v0.6.0-beta",
+      "verification": "GitHub upstream release asset SHA-256"
+    },
+    "ytdlp-windows-x64": {
+      "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.10.26/yt-dlp.exe",
+      "sha256": "f5389d3698ecde4ef06f4e6b1ce0294fe9ac1396228c8990b8d3416d6d177a7d",
+      "filename": "yt-dlp.exe",
+      "version": "2026.10.26",
+      "upstream": "https://github.com/yt-dlp/yt-dlp/releases/tag/2026.10.26",
+      "verification": "GitHub upstream release asset SHA-256"
+    },
+    "ytdlp-macos-universal": {
+      "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.10.26/yt-dlp_macos",
+      "sha256": "0f922c15ccc0b83eefa1c8bc9104e434318c4bf16e408e1ee93b7745a6efe0aa",
+      "filename": "yt-dlp_macos",
+      "version": "2026.10.26",
+      "upstream": "https://github.com/yt-dlp/yt-dlp/releases/tag/2026.10.26",
+      "verification": "GitHub upstream release asset SHA-256"
+    },
+    "ffmpeg-windows-x64": {
+      "url": "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/autobuild-2026-11-02-22-51/ffmpeg-N-128340-gf80a436ffd-win64-gpl.zip",
+      "sha256": "91adc75f861c9b1252fe0911fae527763693fa0ffc0ed247cbc9b2be8118b1ce",
+      "filename": "ffmpeg-N-128340-gf80a436ffd-win64-gpl.zip",
+      "version": "autobuild-2026-11-02-22-51",
+      "upstream": "https://github.com/yt-dlp/FFmpeg-Builds/releases/tag/autobuild-2026-11-02-22-51",
+      "verification": "GitHub yt-dlp build release asset SHA-256; downstream build of FFmpeg"
+    },
+    "ffmpeg-source": {
+      "url": "https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz",
+      "sha256": "8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e",
+      "filename": "ffmpeg-9.0.2.tar.xz",
+      "version": "9.0.2",
+      "upstream": "https://ffmpeg.org/download.html",
+      "verification": "PGP VALIDSIG FCF986EA15E6E293A5644F10B4322F04D67658D8; fingerprint matches ffmpeg.org/download.html"
+    },
+    "x264-source": {
+      "filename": "x264-source.tar.gz",
+      "url": "https://code.videolan.org/videolan/x264/-/archive/b35605ace3ddf7c1a5d67a2eb553f034aef41d55/x264-b35605ace3ddf7c1a5d67a2eb553f034aef41d55.tar.gz",
+      "sha256": "cd71a7515b0e9a012e1ac9b1f8415bebcaf6fc97d4db32286642ac4c0fbe24f9",
+      "version": "b35605ace3ddf7c1a5d67a2eb553f034aef41d55",
+      "upstream": "https://code.videolan.org/videolan/x264",
+      "verification": "Official source commit archive via HTTPS, pinned content SHA-256"
+    },
+    "aom-source": {
+      "filename": "aom-3.14.1.tar.gz",
+      "url": "https://aomedia.googlesource.com/aom/+archive/refs/tags/v3.14.1.tar.gz",
+      "sha256": "676aabe99ae3680eaf4e1b32749aa7021bde211223984428536481addee86e1f",
+      "version": "3.14.1",
+      "upstream": "https://aomedia.googlesource.com/aom/+archive/refs/tags/v3.14.1.tar.gz",
+      "verification": "Official release-tagged HTTPS content, pinned SHA-256"
+    },
+    "n-license": {
+      "filename": "N-LICENSE.txt",
+      "url": "https://raw.githubusercontent.com/nilaoda/N_m3u8DL-RE/v0.6.0-beta/LICENSE",
+      "sha256": "99c39a1a78cd3d844f336576c18645e7334d2d5034713e961973591149536081",
+      "version": "release-pinned",
+      "upstream": "https://raw.githubusercontent.com/nilaoda/N_m3u8DL-RE/v0.6.0-beta/LICENSE",
+      "verification": "Official release-tagged HTTPS content, pinned SHA-256"
+    },
+    "ytdlp-license": {
+      "filename": "YTDLP-LICENSE.txt",
+      "url": "https://raw.githubusercontent.com/yt-dlp/yt-dlp/2026.10.26/LICENSE",
+      "sha256": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c",
+      "version": "release-pinned",
+      "upstream": "https://raw.githubusercontent.com/yt-dlp/yt-dlp/2026.10.26/LICENSE",
+      "verification": "Official release-tagged HTTPS content, pinned SHA-256"
+    },
+    "ytdlp-third-party": {
+      "filename": "YTDLP-THIRD-PARTY.txt",
+      "url": "https://raw.githubusercontent.com/yt-dlp/yt-dlp/2026.10.26/THIRD_PARTY_LICENSES.txt",
+      "sha256": "472aefe951c7db35e1657c1d13fd337140511ed6f2b329205105ad441c5a02b7",
+      "version": "release-pinned",
+      "upstream": "https://raw.githubusercontent.com/yt-dlp/yt-dlp/2026.10.26/THIRD_PARTY_LICENSES.txt",
+      "verification": "Official release-tagged HTTPS content, pinned SHA-256"
+    },
+    "python-licenses-macos-arm64": {
+      "filename": "cpython-3.13.18+20261026-aarch64-apple-darwin-pgo+lto-full.tar.zst",
+      "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.13.18%2B20261026-aarch64-apple-darwin-pgo%2Blto-full.tar.zst",
+      "sha256": "5706f1fdf82f7ea10b56a9b9cbadfa5f372010568a9794f19e0af4c48d975f34",
+      "version": "20261026",
+      "upstream": "https://github.com/astral-sh/python-build-standalone/releases/tag/20261026",
+      "verification": "Official Astral full-distribution release asset SHA-256; licensing metadata and notices only are packaged"
+    },
+    "python-licenses-macos-x64": {
+      "filename": "cpython-3.13.18+20261026-x86_64-apple-darwin-pgo+lto-full.tar.zst",
+      "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.13.18%2B20261026-x86_64-apple-darwin-pgo%2Blto-full.tar.zst",
+      "sha256": "3b07eb16ae3d4f15e71ba5173f5ebf98156a4fbb1fc62a531b680efadff28feb",
+      "version": "20261026",
+      "upstream": "https://github.com/astral-sh/python-build-standalone/releases/tag/20261026",
+      "verification": "Official Astral full-distribution release asset SHA-256; licensing metadata and notices only are packaged"
+    },
+    "python-licenses-windows-x64": {
+      "filename": "cpython-3.13.18+20261026-x86_64-pc-windows-msvc-pgo-full.tar.zst",
+      "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.13.18%2B20261026-x86_64-pc-windows-msvc-pgo-full.tar.zst",
+      "sha256": "cc35b06b48ae8f854a49c7be3b0cbebf6f822d965ffe0662ccff4713d20f3157",
+      "version": "20261026",
+      "upstream": "https://github.com/astral-sh/python-build-standalone/releases/tag/20261026",
+      "verification": "Official Astral full-distribution release asset SHA-256; licensing metadata and notices only are packaged"
+    }
+  }
+}

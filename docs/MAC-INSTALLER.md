@@ -1,69 +1,61 @@
-# Mac companion installer
+# Mac Firefox companion installer
 
-## Decision and status
+## Decision and current status
 
-Use a Developer ID signed, notarized installer app, distributed as a ZIP containing the app. Bundle Python, yt-dlp, FFmpeg and ffprobe so teachers need no Terminal, Homebrew or dependency downloads. Install for the current account without sudo. This is the proposed distribution path, not an available teacher download.
+The teacher flow is a Developer ID signed, notarized app containing an offline payload. The extension downloads its ZIP. The teacher extracts the ZIP, opens the app, approves the normal macOS prompt, clicks Install, then returns to Firefox and chooses Connect. No Terminal, Homebrew or dependency downloads are part of installation. A downloaded `.command` exposes Terminal and execution-permission problems. A signed `.pkg` remains an option for school IT, but this per-user app needs no sudo or administrator password.
 
-The local prototype implements installation and packaging. It uses a developer Python fixture and fake media tools. It refuses normal installation from its app window. Only an explicit staging destination works. It is not signed for distribution or notarized. No dependency versions or release download URLs have been approved or published.
+Mozilla assigns native-app installation to the operating system. A host manifest must exist before native messaging can start it. Both Firefox and Chrome restrict `downloads.open` to a user action, so download completion cannot silently launch the installer. [Mozilla native messaging](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Native_messaging), [Firefox downloads.open](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/downloads/open), [Chrome native messaging](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging).
 
-| Format | Teacher experience | Decision |
-| --- | --- | --- |
-| Downloaded `.command` | Opens Terminal if execution permissions and macOS policy allow it. Can require executable permissions, security troubleshooting and dependency setup. | Unsuitable for the intended audience. |
-| Signed, notarized `.app` in ZIP | Extract, open, approve the normal macOS prompt, click Install, return to extension. Can install per user. | Recommended. |
-| Signed, notarized `.pkg` | Familiar Installer wizard. Useful for managed deployment. Package scripts and per-user registration need a separate design. | Consider for school IT later. |
+Real Apple Silicon and Intel FFmpeg builds and real offline tool payloads are staged locally. The Windows packaging route is documented in [WINDOWS-INSTALLER.md](WINDOWS-INSTALLER.md). These are review candidates. No teacher installer has been published. The local signing inventory found zero valid code-signing identities on 2026-11-03. No private key, account, MFA or notarization credential was accessed.
 
-The browser can initiate a download. It cannot silently install a native host. Mozilla explicitly assigns native-app installation to the operating system. Chrome requires a host manifest before native messaging works. Both browsers restrict `downloads.open` to a user action. An asynchronous download completion does not preserve that action. Prefer the browser's Downloads interface to open the downloaded ZIP. [Mozilla native messaging](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Native_messaging), [Chrome native messaging](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging), [Chrome downloads.open](https://developer.chrome.com/docs/extensions/reference/api/downloads#method-open), [Firefox downloads.open](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/downloads/open).
+## Shared runtime contract
 
-Apple requires the appropriate Developer ID signing and notarization for the normal Gatekeeper distribution path. An app uses Developer ID Application. A signed package uses Developer ID Installer. A ZIP cannot carry a stapled ticket directly. Staple the app and archive it again after acceptance. [Apple notarization](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution), [Apple workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow), [Installer certificate](https://help.apple.com/xcode/mac/current/en.lproj/deve51ce7c3d.html).
+A Mac payload contains `runtime/bin/python3`, `companion/*.py`, `tools/yt-dlp`, `tools/ffmpeg`, `tools/ffprobe`, `tools/N_m3u8DL-RE`, `installer/install_payload.py`, license notices and provenance. `payload.json` uses schema 2, target `macos-arm64` or `macos-x64`, semantic version, one exact Firefox ID and SHA-256 for every payload file. All files must be listed. Symbolic links are rejected; the assembler dereferences the verified Python runtime's internal links.
 
-## Intended teacher flow
+The host is `org.teacher.video_downloader`. Installs use `~/Library/Application Support/Teacher Video Downloader/app`. The Firefox manifest points to `app/launch-host`. The launcher sets `TVD_STATE_DIR` to the parent state folder and `YTDL_OUTPUT_DIR` to the preserved output directory. Bundled tools come first on PATH; Homebrew is not needed. Bundled Python runs the host with an explicit import directory and isolated mode. Worker code must honor these environment variables and use `worker.lock` relative to the state directory. Mac uses `flock`; Windows uses a first-byte `msvcrt.locking` lock.
 
-1. Click Get Mac companion. The eventual release page offers Apple Silicon and Intel downloads with clear labels. Do not guess architecture from a reduced browser user agent.
-2. Open the downloaded ZIP, then open LessonShelf Installer. Approve the normal macOS prompt.
-3. Click Install. The app verifies its bundled files and installs into the teacher's account.
-4. Read the success message, return to the Firefox extension and choose Connect.
+The installer refuses an active worker, unknown registration, unregistered app folder or interrupted installer lock. It stages and verifies a new payload before switching program files. An identical verified reinstall is a no-op. Upgrades retain the previous app and registration under `rollback/`. The queue, job partials, saved media and custom output location remain in place. A failed registration restores only the program and registration owned by that transaction. An interrupted process retains `.installer-lock` and recovery evidence for review; it does not silently remove uncertain files.
 
-The prototype covers the installation backend. Browser download, quarantine handling, the app window, keyboard access, progress feedback, real dependency relocation and Connect in Firefox have not been tested. A production app needs responsive progress while it checks and copies the runtime. An existing installation stops this fresh-install prototype. Updating an active companion needs a separate job-preserving workflow.
+The selected Firefox ID is either `teacher-video-downloader@local.invalid` for the signed extension or `lessonshelf-preview@local.invalid` for preview testing. Registration grants only the selected ID. Chrome remains paused. Windows ARM64 is outside this candidate.
 
-## Local review
+The runtime can inspect `app/payload.json` and `app/PROVENANCE.json` for installed-file integrity and the exact pinned N release. It must compare the executable against the approved binary hash, then check compatibility for each video. The authentic 0.6.0-beta executable SHA-256 values are:
 
-Run from the repository with Python 3.10+ and Xcode Command Line Tools. These are developer requirements only.
+| Target | Binary SHA-256 |
+| --- | --- |
+| Mac arm64 | `c332b463aa42975c25217d56a51a2ea32fddfd86b4ae8338a8f7416b0bc196e7` |
+| Mac Intel | `8d4ce04c28f0fa9e2aea9c53af2a5895882f353e12425c5c3fcafaa4370a216a` |
+| Windows x64 | `35e7c16983f0315bba2a3f37dc392fdfa074be614c8effb642b78376b18ba272` |
+
+The current pinned N release lacks some flags expected by the old generic runtime path. Its known-build compatibility route must be integrated by the runtime owner. A receipt alone must not force an available status or skip per-video checks.
+
+## Reproducible local build
+
+All intermediates and candidates belong in `.scratch/mac-installer-20261103`. Build tools require Python 3.11+, Xcode Command Line Tools, CMake, Ninja, pkg-config and a tar implementation with zstd support. These are developer requirements only. Builders refuse existing output paths.
+
+```sh
+rtk proxy python3 scripts/macos/fetch_dependencies.py --cache .scratch/mac-installer-20261103/upstream
+rtk proxy python3 scripts/macos/build_ffmpeg.py --architecture arm64 --cache .scratch/mac-installer-20261103/upstream --work .scratch/mac-installer-20261103/ffmpeg-arm64
+rtk proxy python3 scripts/macos/prepare_payload.py --target macos-arm64 --version 0.3.0 --firefox-id teacher-video-downloader@local.invalid --cache .scratch/mac-installer-20261103/upstream --ffmpeg-build .scratch/mac-installer-20261103/ffmpeg-arm64 --output .scratch/mac-installer-20261103/payload-macos-arm64
+rtk proxy python3 scripts/macos/build_installer.py --payload .scratch/mac-installer-20261103/payload-macos-arm64 --output .scratch/mac-installer-20261103/LessonShelf-0.3.0-macos-arm64.app
+```
+
+For Intel, build FFmpeg with architecture `x86_64`, assemble target `macos-x64` and use distinct output paths. Swift can cross-compile the Intel app on Apple Silicon, but the builder does not run Intel code through Rosetta or claim Intel runtime validation. The builder inspects every Mach-O object's architecture.
+
+The dependency lock pins CPython 3.13.18 from the official Astral Python Build Standalone release 20261026, yt-dlp 2026.10.26 and N_m3u8DL-RE 0.6.0-beta. Astral's runtime is a maintained relocatable CPython build, not a Python Software Foundation installer. Its full distribution supplies transitive license notices and licensing metadata. All archive hashes match upstream release metadata. Mac FFmpeg 9.0.2 is built with pinned upstream x264 and AOM 3.14.1 sources. Its detached signature verified against the fingerprint published on ffmpeg.org. The bundle includes the source archives, build commands and applicable notices. [Python Build Standalone](https://github.com/astral-sh/python-build-standalone), [FFmpeg downloads and verification](https://ffmpeg.org/download.html), [yt-dlp releases](https://github.com/yt-dlp/yt-dlp/releases), [N releases](https://github.com/nilaoda/N_m3u8DL-RE/releases).
+
+## Verification and release boundary
 
 ```sh
 rtk proxy python3 -m unittest discover -s tests -p test_macos_installer.py -v
-rtk proxy python3 scripts/macos/build_installer.py --demo --output '.scratch/mac-installer-20261103/LessonShelf Installer Prototype.app'
+rtk proxy python3 scripts/macos/verify_payload.py --payload .scratch/mac-installer-20261103/payload-macos-arm64 --work .scratch/mac-installer-20261103/real-arm64-check --report .scratch/mac-installer-20261103/real-arm64-check.json
 ```
 
-The builder refuses an existing output. The demo fixture uses the Python interpreter that builds it and contains no functioning media tools. Keep it local. To exercise installation, pass the app's bundled `Contents/Resources/payload` to `Contents/MacOS/LessonShelfInstaller` with `--payload DIRECTORY --stage-root EMPTY_TEST_DIRECTORY`. Add `--dry-run` for verification without destination writes. Never use a real teacher account as the staging root. Tests allocate disposable destinations and explicit state/output directories. They do not use the installed companion.
+The 19 focused tests passed on this Apple Silicon Mac. They cover staging, hash and platform rejection, links, existing-install preservation, active locks, idempotent reinstall, retained upgrade evidence, rollback, custom output preservation, native framing and Mac app packaging. The Windows registry projection test proves portable transaction logic only.
 
-On 2026-11-03, all 15 focused tests passed on this Apple Silicon Mac. They covered the app build, staging handshake, dry run, architecture and hash rejection, missing files, links, existing artifacts, interrupted locks, registration rollback and retry. This is local backend evidence only.
+The real payload checker runs bundled Python and all four tools, stages installation, checks the native doctor, creates AV1/AAC synthetic media, converts it to H.264/AAC MP4 and decodes the result. It records failures as failures. The initial sandbox run could not start yt-dlp's PyInstaller semaphore. The named staging checker received explicit tool approval, and the real tools then ran successfully. No OS security setting or quarantine attribute changed. The current runtime's N recognition still prevents an all-green native doctor until its owner integrates the pinned build.
 
-The app accepts a hash-locked offline payload through `--payload DIRECTORY` instead of `--demo`. Its `payload.json` must have schema `1`, architecture `arm64` or `x86_64`, `prototype: true`, one exact `firefoxID`, and a `files` object mapping each relative file path to its SHA-256. The manifest excludes itself. Every file must be listed. Symbolic links are rejected, so supply a dereferenced runtime. Required files are:
+Before release, rebuild from the reviewed integrated source commit, complete native Apple Silicon, Intel and Windows tests, and check the actual installer UI and browser download flow. The app window and normal Gatekeeper path have not been verified. Windows corresponding-source review and Authenticode checks remain explicit gates.
 
-```text
-runtime/bin/python3
-companion/host.py
-companion/worker.py
-tools/yt-dlp
-tools/ffmpeg
-tools/ffprobe
-LICENSES.txt
-```
+The exact Mac account step is for the Apple Developer account holder to obtain a Developer ID Application signing identity with its private key in the approved signing environment. Sign nested executable code and libraries first, recompute payload hashes, then sign the outer app with hardened runtime settings. The account holder submits the reviewed archive through Xcode or `notarytool`, checks acceptance, staples and validates the app, then archives the stapled app. A ZIP cannot be stapled directly. Keep quarantine enabled and test an actual browser download on clean Macs. [Apple notarization](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution), [Apple workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow).
 
-Include the complete companion source and all Python runtime libraries and standard modules. Build natively on the matching Mac architecture. The builder checks the architecture of every Mach-O file. The installer rechecks file hashes before and after staging. These checks detect corruption, not publisher identity. Code signing must supply authenticity in a real release. `BUILD.json` records local source provenance and artifact hashes.
-
-Installation creates `Library/Application Support/Teacher Video Downloader/app` and the Firefox native-host manifest beneath the supplied account root. The launcher uses the bundled interpreter, isolates the host import path and puts bundled tools first. No Homebrew paths are added. It preserves the existing queue, partial files and downloads. It refuses an existing app, registration or installer lock. A failed registration rolls back only the new app. Empty parent folders can remain. An interrupted process can leave `.installer-lock` and possibly a new app for manual review; it never silently repairs or overwrites that state.
-
-The browser registration allows either `lessonshelf-preview@local.invalid` or `teacher-video-downloader@local.invalid`, selected at build time. It never grants both automatically. Chrome registration is deliberately absent while Chrome release is paused. Windows is outside this task.
-
-## Work before teacher distribution
-
-1. Select and pin a complete relocatable CPython runtime and official yt-dlp release separately for each architecture. Build FFmpeg and ffprobe from an official pinned FFmpeg source release if strict upstream provenance is required. FFmpeg's website delegates macOS binary builds to third parties. Record the exact version, upstream URL, publisher verification and SHA-256 for every input. Do not download dependencies on the teacher's Mac. [CPython releases](https://www.python.org/downloads/source/), [yt-dlp releases](https://github.com/yt-dlp/yt-dlp/releases), [FFmpeg downloads](https://ffmpeg.org/download.html).
-2. Audit relocation and dynamic-library paths on clean Apple Silicon and Intel Macs without developer Python or Homebrew. Include CPython and all transitive dependency notices. Include yt-dlp notices and FFmpeg build configuration, license and corresponding-source obligations for the selected build. The prototype's `LICENSES.txt` presence check does not perform that audit. Optional N_m3u8DL-RE is excluded from the initial bundle.
-3. Have the Apple Developer account holder create or obtain Developer ID Application signing credentials through Apple's account tools. Keep the private key and notarization credentials in the approved human-controlled boundary. No credentials were accessed for this prototype.
-4. Implement and review the production packaging route. Sign nested executable code and runtime libraries, then the app with the required hardened runtime settings. Recompute the payload hashes after nested signing and before sealing the outer app. Do not use a blanket signing operation as a substitute for reviewing nested code. The current builder intentionally rejects `prototype: false`.
-5. The account holder submits the exact archive using Xcode or `notarytool`, checks acceptance, staples and validates the app ticket, then archives the stapled app. Validate the final artifact with Gatekeeper on clean Macs after an actual browser download, including an offline launch with the stapled ticket. Keep quarantine enabled. No Gatekeeper bypass is part of this workflow.
-6. Test the complete teacher flow, real dependency checks, queue operation, cancellation, errors and installation recovery. Verify the stable Firefox extension ID. Existing-install updates remain separate.
-7. Obtain separate release approval, publish versioned artifacts and checksums, then wire the extension button to that real release. The public MAC-SETUP page is older than this checkout and was not updated. Do not label the prototype as available to teachers.
-
-There is no dependency downloader in the prototype. Missing or corrupt offline files stop installation before destination writes; retry means obtaining the complete artifact again. Tests cover these failures instead of simulating an unused network installer. No account actions, signing, publication, live registration, installed-companion changes or browser interaction occurred.
+Parent review owns publication and extension download links. No installed companion, live registration, queue, download, browser UI or public setup page was changed by this installer work. The earlier fixture prototype remains retained in scratch as prior review evidence; current candidates contain real dependencies. Source build trees, verified caches and test evidence remain staged while release work is unfinished.

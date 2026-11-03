@@ -1,4 +1,4 @@
-// Local prototype. No privileged operations, network requests, or update replacement.
+// Per-user offline installer UI and pre-execution payload integrity checks.
 import AppKit
 import CryptoKit
 import Darwin
@@ -12,7 +12,8 @@ struct InstallError: LocalizedError {
 func fail(_ message: String) throws -> Never { throw InstallError(message: message) }
 struct Payload: Codable {
     let schema: Int
-    let architecture: String
+    let target: String
+    let version: String
     let prototype: Bool
     let firefoxID: String
     let files: [String: String]
@@ -47,9 +48,9 @@ func validate(_ directory: URL) throws -> Payload {
     #else
     let architecture = "x86_64"
     #endif
-    guard payload.schema == 1, payload.architecture == architecture else { try fail("This download is for a different Mac processor. Get the matching installer.") }
+    guard payload.schema == 2, payload.target == "macos-" + (architecture == "arm64" ? "arm64" : "x64") else { try fail("This download is for a different Mac processor. Get the matching installer.") }
     guard ["teacher-video-downloader@local.invalid", "lessonshelf-preview@local.invalid"].contains(payload.firefoxID) else { try fail("Unapproved Firefox extension ID.") }
-    let required = ["runtime/bin/python3", "tools/yt-dlp", "tools/ffmpeg", "tools/ffprobe", "companion/host.py", "companion/worker.py", "LICENSES.txt"]
+    let required = ["runtime/bin/python3", "tools/yt-dlp", "tools/ffmpeg", "tools/ffprobe", "companion/host.py", "companion/worker.py", "LICENSES.txt", "PROVENANCE.json", "installer/install_payload.py", "tools/N_m3u8DL-RE"]
     guard required.allSatisfy({ payload.files[$0] != nil }) else { try fail("The offline dependency bundle is incomplete. Get a complete installer.") }
     var actual = Set<String>()
     guard let walker = fm.enumerator(at: directory, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey]) else { try fail("Cannot read payload.") }
@@ -68,60 +69,23 @@ func validate(_ directory: URL) throws -> Payload {
     }
     return payload
 }
-func quote(_ value: String) -> String { "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'" }
 func install(payload: URL, userRoot: URL, dryRun: Bool, staging: Bool) throws -> String {
     let spec = try validate(payload)
-    guard staging || !spec.prototype else { try fail("This is a test-only prototype. It can install only into an explicit staging directory.") }
+    guard staging || !spec.prototype else { try fail("This is a test-only payload. It can install only into an explicit staging directory.") }
     try noLinks(userRoot)
-    let base = userRoot.appendingPathComponent("Library/Application Support/Teacher Video Downloader")
-    let app = base.appendingPathComponent("app")
-    let manifest = userRoot.appendingPathComponent("Library/Application Support/Mozilla/NativeMessagingHosts/\(hostName).json")
-    try noLinks(app); try noLinks(manifest)
-    guard !exists(app), !exists(manifest) else { try fail("A companion or browser registration already exists. Nothing was replaced. Keep using your current companion.") }
-    if dryRun { return "Ready to install into \(userRoot.path). No files changed." }
-    // mkdir is the exclusive lock. Never remove a lock owned by another installer.
-    try fm.createDirectory(at: base, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-    let lock = base.appendingPathComponent(".installer-lock")
-    guard mkdir(lock.path, 0o700) == 0 else { try fail("Another installation is running, or an interrupted installation needs review. Nothing was replaced.") }
-    var keepLock = false
-    defer { if !keepLock { try? fm.removeItem(at: lock) } }
-    let staged = lock.appendingPathComponent("app")
-    var installed = false
-    do {
-        try fm.copyItem(at: payload, to: staged)
-        _ = try validate(staged)
-        let launcher = staged.appendingPathComponent("launch-host")
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.withoutEscapingSlashes]
-        let companion = String(data: try encoder.encode(app.appendingPathComponent("companion").path), encoding: .utf8)!
-        let host = String(data: try encoder.encode(app.appendingPathComponent("companion/host.py").path), encoding: .utf8)!
-        let bootstrap = "import runpy,sys;sys.path.insert(0," + companion + ");runpy.run_path(" + host + ",run_name='__main__')"
-        let script = "#!/bin/sh\numask 077\nexport PATH=" + quote(app.appendingPathComponent("tools").path + ":/usr/bin:/bin") + "\nexport PYTHONNOUSERSITE=1\nunset PYTHONPATH PYTHONHOME\nexec " + quote(app.appendingPathComponent("runtime/bin/python3").path) + " -I -c " + quote(bootstrap) + " \"$@\"\n"
-        try script.write(to: launcher, atomically: false, encoding: .utf8)
-        try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: launcher.path)
-        try fm.createDirectory(at: manifest.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        // Recheck after copying. moveItem refuses an existing app; link refuses a manifest race.
-        try noLinks(app); try noLinks(manifest)
-        guard !exists(app), !exists(manifest) else { try fail("An installation appeared while preparing. Nothing was replaced.") }
-        try fm.moveItem(at: staged, to: app); installed = true
-        let registration: [String: Any] = ["name": hostName, "description": "LessonShelf local companion", "type": "stdio", "path": app.appendingPathComponent("launch-host").path, "allowed_extensions": [spec.firefoxID]]
-        let data = try JSONSerialization.data(withJSONObject: registration, options: [.prettyPrinted, .sortedKeys])
-        let prepared = lock.appendingPathComponent("registration.json")
-        try data.write(to: prepared)
-        try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: prepared.path)
-        // Publish complete JSON atomically; link fails if anything owns the target.
-        guard link(prepared.path, manifest.path) == 0 else { try fail("Browser registration failed. The new application was rolled back.") }
-        return "Installed. Return to LessonShelf in Firefox and choose Connect."
-    } catch {
-        // Only artifacts created by this invocation are eligible for rollback.
-        if installed {
-            do { try fm.removeItem(at: app) } catch {
-                keepLock = true
-                try fail("Installation failed and automatic rollback could not finish. Keep this folder for support: " + lock.path)
-            }
-        }
-        throw error
-    }
+    let process = Process()
+    process.executableURL = payload.appendingPathComponent("runtime/bin/python3")
+    process.arguments = ["-B", "-I", payload.appendingPathComponent("installer/install_payload.py").path, "--payload", payload.path]
+    if staging { process.arguments! += ["--stage-root", userRoot.path] } else { process.arguments! += ["--install"] }
+    if dryRun { process.arguments!.append("--dry-run") }
+    let stdout = Pipe(), stderr = Pipe()
+    process.standardOutput = stdout; process.standardError = stderr
+    try process.run()
+    let output = stdout.fileHandleForReading.readDataToEndOfFile()
+    let error = stderr.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
+    guard process.terminationStatus == 0 else { try fail(String(data: error, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "Installation failed. Try again.") }
+    return staging ? (String(data: output, encoding: .utf8) ?? "Staging complete.") : "Installed. Return to LessonShelf in Firefox and choose Connect."
 }
 
 func runCLI() throws {
@@ -134,25 +98,74 @@ func runCLI() throws {
 if CommandLine.arguments.count > 1 {
     do { try runCLI() } catch { fputs("\(error.localizedDescription)\n", stderr); exit(1) }
 } else {
+    final class InstallerWindow: NSObject {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 540, height: 290), styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        let status = NSTextField(wrappingLabelWithString: "Ready to install. Your queue and saved videos are kept. Close Firefox and wait for active downloads before an update.")
+        let button = NSButton(title: "Install", target: nil, action: nil)
+        let cancel = NSButton(title: "Cancel", target: nil, action: nil)
+        let progress = NSProgressIndicator()
+        var finished = false
+        override init() {
+            super.init()
+            window.title = "Install LessonShelf companion"
+            window.isReleasedWhenClosed = false
+            window.backgroundColor = NSColor(red: 37/255, green: 36/255, blue: 34/255, alpha: 1)
+            let title = NSTextField(labelWithString: "LessonShelf companion")
+            title.font = NSFont.systemFont(ofSize: 23, weight: .semibold)
+            title.frame = NSRect(x: 28, y: 227, width: 484, height: 35)
+            let detail = NSTextField(wrappingLabelWithString: "Install for your Mac account and connect Firefox. All media tools are included. No administrator password is needed.")
+            detail.frame = NSRect(x: 28, y: 155, width: 484, height: 60)
+            status.frame = NSRect(x: 28, y: 74, width: 484, height: 75)
+            for label in [title, detail, status] {
+                label.textColor = NSColor(red: 1, green: 252/255, blue: 242/255, alpha: 1)
+                if label !== title { label.font = NSFont.systemFont(ofSize: 14) }
+                window.contentView!.addSubview(label)
+            }
+            button.frame = NSRect(x: 370, y: 22, width: 142, height: 40)
+            button.bezelStyle = .rounded
+            button.bezelColor = NSColor(red: 235/255, green: 94/255, blue: 40/255, alpha: 1)
+            button.keyEquivalent = "\r"
+            button.target = self; button.action = #selector(begin)
+            cancel.frame = NSRect(x: 250, y: 22, width: 110, height: 40)
+            cancel.bezelStyle = .rounded
+            cancel.target = self; cancel.action = #selector(close)
+            cancel.keyEquivalent = "\u{1b}"
+            progress.style = .spinning
+            progress.frame = NSRect(x: 28, y: 31, width: 24, height: 24)
+            window.contentView!.addSubview(button); window.contentView!.addSubview(cancel); window.contentView!.addSubview(progress)
+            window.center(); window.makeKeyAndOrderFront(nil)
+        }
+        @objc func close() { NSApplication.shared.terminate(nil) }
+        @objc func begin() {
+            if finished { close(); return }
+            button.isEnabled = false; cancel.isEnabled = false
+            window.standardWindowButton(.closeButton)?.isEnabled = false
+            progress.startAnimation(nil)
+            status.stringValue = "Checking and installing the bundled tools..."
+            DispatchQueue.global(qos: .userInitiated).async {
+                var message: String
+                var success = false
+                do {
+                    guard let resources = Bundle.main.resourceURL else { try fail("Installer resources are missing.") }
+                    message = try install(payload: resources.appendingPathComponent("payload"), userRoot: fm.homeDirectoryForCurrentUser, dryRun: false, staging: false)
+                    success = true
+                } catch { message = error.localizedDescription }
+                DispatchQueue.main.async {
+                    self.status.stringValue = message
+                    self.finished = success
+                    self.button.title = success ? "Close" : "Try again"
+                    self.button.isEnabled = true; self.cancel.isEnabled = true
+                    self.window.standardWindowButton(.closeButton)?.isEnabled = true
+                    self.progress.stopAnimation(nil)
+                }
+            }
+        }
+    }
     let app = NSApplication.shared
     app.setActivationPolicy(.regular)
     app.appearance = NSAppearance(named: .darkAqua)
+    let controller = InstallerWindow()
     app.activate(ignoringOtherApps: true)
-    let alert = NSAlert()
-    alert.messageText = "Install LessonShelf companion"
-    alert.informativeText = "Install for your Mac account and connect Firefox. No administrator password is needed. Existing installations are kept."
-    alert.addButton(withTitle: "Install"); alert.addButton(withTitle: "Cancel")
-    if alert.runModal() == .alertFirstButtonReturn {
-        let result = NSAlert()
-        do {
-            guard let resources = Bundle.main.resourceURL else { try fail("Installer resources are missing.") }
-            result.messageText = "LessonShelf companion installed"
-            result.informativeText = try install(payload: resources.appendingPathComponent("payload"), userRoot: fm.homeDirectoryForCurrentUser, dryRun: false, staging: false)
-        } catch {
-            result.alertStyle = .warning
-            result.messageText = "Companion was not installed"
-            result.informativeText = error.localizedDescription
-        }
-        result.addButton(withTitle: "OK"); result.runModal()
-    }
+    app.run()
+    withExtendedLifetime(controller) {}
 }
