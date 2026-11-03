@@ -26,6 +26,19 @@ class Core(unittest.TestCase):
    core.ensure_worker();self.assertEqual(spawn.call_args.kwargs['creationflags'],0x1000208)
    spawn.side_effect=PermissionError()
    with self.assertRaisesRegex(ValueError,'job remains queued'):core.ensure_worker()
+ def test_worker_starts_only_for_queued_work(self):
+  with patch.object(core,'ensure_worker') as spawn,patch.object(core,'doctor',return_value={}):
+   core.handle({'op':'doctor'});core.handle({'op':'status'});spawn.assert_not_called()
+   result=core.handle({'op':'enqueue','jobs':[{'url':'https://example.com/video'}]});id=result['jobIds'][0]
+   self.assertEqual(spawn.call_count,1)
+   core.handle({'op':'doctor'});self.assertEqual(spawn.call_count,1)
+   core.handle({'op':'status'});self.assertEqual(spawn.call_count,2)
+   core.handle({'op':'pause','id':id});core.handle({'op':'status'});self.assertEqual(spawn.call_count,2)
+   core.handle({'op':'resume','id':id});self.assertEqual(spawn.call_count,3)
+ def test_denied_worker_leaves_job_queued(self):
+  with patch.object(core,'ensure_worker',side_effect=ValueError('Windows prevented worker startup')):
+   with self.assertRaisesRegex(ValueError,'prevented'):core.handle({'op':'enqueue','jobs':[{'url':'https://example.com/video'}]})
+  self.assertEqual(core.handle({'op':'status'},False)['jobs'][0]['status'],'queued')
  def test_reveal_only_recorded_completed_media(self):
   result=core.handle({'op':'enqueue','jobs':[{'url':'https://example.com/video'}]},False);id=result['jobs'][0]['id']
   with self.assertRaisesRegex(ValueError,'No completed download'):core.handle({'op':'reveal','id':id},False)

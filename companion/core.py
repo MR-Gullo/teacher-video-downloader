@@ -206,8 +206,9 @@ def handle(req, start=True):
         elif op=='doctor':result['doctor']=doctor()
         elif op!='status':raise ValueError('Unknown operation')
         result['jobs']=status(db)
+        needs_worker=start and op in ('enqueue','resume','retry','status') and bool(db.execute("SELECT 1 FROM jobs WHERE status IN ('queued','retrying') LIMIT 1").fetchone())
     finally:db.close()
-    if start:ensure_worker()
+    if needs_worker:ensure_worker()
     return result
 
 def quality_resolution_pattern(quality):
