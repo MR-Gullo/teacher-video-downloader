@@ -60,6 +60,8 @@ jobs:
           $stage = Join-Path $PWD "$env:QA_ROOT/Installer staging path"
           $process = Start-Process "$env:QA_ROOT/LessonShelf-windows-x64.exe" -ArgumentList "--stage-root `"$stage`"" -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "Staged installer failed: $($process.ExitCode)" }
+          python tests/windows_launcher_acceptance.py --app "$stage/AppData/Local/LessonShelf/app" --report "$env:QA_ROOT/reports/native-launcher.json"
+          if ($LASTEXITCODE -ne 0) { throw 'Native launcher transport check failed' }
       - name: Prepare the Firefox extension
         run: |
           $xpi = "$env:QA_ROOT/lessonshelf.xpi"
