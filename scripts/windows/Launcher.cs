@@ -35,6 +35,7 @@ class Launcher {
             start.EnvironmentVariables.Remove("PYTHONHOME");
             start.EnvironmentVariables["PYTHONNOUSERSITE"] = "1";
             start.EnvironmentVariables["PYTHONDONTWRITEBYTECODE"] = "1";
+            start.EnvironmentVariables["DENO_NO_UPDATE_CHECK"] = "1";
             start.EnvironmentVariables["TVD_STATE_DIR"] = state;
             start.EnvironmentVariables["YTDL_OUTPUT_DIR"] = (string)record["outputDir"];
             using (var child = Process.Start(start)) {

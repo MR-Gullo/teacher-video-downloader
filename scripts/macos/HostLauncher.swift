@@ -14,6 +14,7 @@ do {
     setenv("PATH", payload.appendingPathComponent("tools").path + ":/usr/bin:/bin", 1)
     setenv("PYTHONNOUSERSITE", "1", 1)
     setenv("PYTHONDONTWRITEBYTECODE", "1", 1)
+    setenv("DENO_NO_UPDATE_CHECK", "1", 1)
     unsetenv("PYTHONHOME"); unsetenv("PYTHONPATH")
     setenv("TVD_STATE_DIR", state.path, 1)
     setenv("YTDL_OUTPUT_DIR", output, 1)

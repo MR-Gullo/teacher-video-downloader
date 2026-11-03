@@ -74,6 +74,7 @@ def assemble(target, version, firefox_id, cache, output, ffmpeg_build=None, wind
         shutil.copyfile(deno / ('deno' + ext), tools / ('deno' + ext))
         notices = payload / 'licenses'; notices.mkdir()
         deno_notices = notices / 'deno'; deno_notices.mkdir()
+        shutil.copytree(Path(__file__).with_name('licenses') / 'deno-v8', deno_notices / 'v8')
         sources = payload / 'sources'; sources.mkdir()
         shutil.copyfile(cache / lock['deno-source']['filename'], sources / lock['deno-source']['filename'])
         with tarfile.open(cache / lock['deno-source']['filename']) as archive:

@@ -42,7 +42,7 @@ def verify(payload, work, report, companion_app=None):
     base = Path(result['destination']); app = base / 'app'
     installed_payload = app / 'LessonShelf Companion.app/Contents/Resources/payload' if companion_app else app
     tools = installed_payload / 'tools'
-    env = dict(os.environ, PATH=str(tools) + os.pathsep + os.environ.get('PATH', ''), PYTHONDONTWRITEBYTECODE='1')
+    env = dict(os.environ, PATH=str(tools) + os.pathsep + os.environ.get('PATH', ''), PYTHONDONTWRITEBYTECODE='1', DENO_NO_UPDATE_CHECK='1')
     ext = '.exe' if windows else ''
     commands = [('python', [str(installed_payload / ('runtime/python.exe' if windows else 'runtime/bin/python3')), '-B', '-I', '-c', 'import sqlite3,ssl,sys;print(sys.version);print(sqlite3.sqlite_version);print(ssl.OPENSSL_VERSION)']),
                 ('yt-dlp', [str(tools / ('yt-dlp' + ext)), '--version']),
