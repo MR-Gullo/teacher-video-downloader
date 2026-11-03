@@ -24,7 +24,7 @@ The companion uses Python, yt-dlp and FFmpeg installed on your Mac. It does not 
 python3 scripts/install-macos.py --firefox
 ```
 
-4. Open LessonShelf, expand **Help & setup**, and choose **Reconnect**, then **Check local tools**. The fixed Firefox add-on ID is `teacher-video-downloader@local.invalid`.
+4. Open LessonShelf, expand **Help & setup**, and choose **Check connection**, then **Check local tools**. The fixed Firefox add-on ID is `teacher-video-downloader@local.invalid`.
 
 The installer works per user and does not need sudo. It stops if it finds an existing companion or Firefox host manifest. Do not replace an existing setup until its queue, browser registrations, and active downloads have been checked.
 
@@ -38,7 +38,7 @@ Default: `~/Downloads/youtube-downloads`. For a persistent different location, a
 
 `YTDL_OUTPUT_DIR=/path python3 companion/host.py` also overrides output for a manually launched host. A browser launched from the Dock does not normally inherit Terminal environment variables; use the installer option instead. Native host launcher adds the standard Homebrew paths and pins the installing Python executable. If Python is removed/upgraded to a new path, reinstall the companion.
 
-Open the extension → **Help & setup** → **Reconnect** or **Check local tools**. If missing companion:
+Open the extension → **Help & setup** → **Check connection** or **Check local tools**. If missing companion:
 - Confirm extension ID and native-manifest allowlist match.
 - Confirm Python still exists at its installed absolute path.
 - Confirm the app directory and host manifest belong to your user.

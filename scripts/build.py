@@ -4,7 +4,7 @@ from pathlib import Path
 root=Path(__file__).resolve().parents[1]
 for browser in ('chrome','firefox'):
  target=root/'build'/browser;target.mkdir(parents=True,exist_ok=True)
- for name in ('background.js','popup.html','popup.js','style.css'):
+ for name in ('background.js','popup.html','popup.js','style.css','setup.html'):
   shutil.copy2(root/'extension'/name,target/name)
  shutil.copytree(root/'extension'/'icons',target/'icons',dirs_exist_ok=True)
  manifest=json.loads((root/'extension'/f'manifest.{browser}.json').read_text())
