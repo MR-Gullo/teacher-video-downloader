@@ -91,7 +91,7 @@ def build(payload, output, companion_app=None, allow_unnotarized_test=False):
         # Hashes are local review evidence, not a publisher signature.
         digest = hashlib.sha256(executable.read_bytes()).hexdigest()
         (resources / 'BUILD.json').write_text(json.dumps(dict(architecture=architecture, executableSHA256=digest,
-            component='installer', companionBundleSHA256=bundle_digest(packaged_companion) if packaged_companion else None,
+            component='installer', embeddedCompanionSourceCommit=json.loads((packaged_companion / 'Contents/Resources/BUILD.json').read_text())['sourceCommit'] if packaged_companion else None, companionBundleSHA256=bundle_digest(packaged_companion) if packaged_companion else None,
             embeddedCompanionNotarizationRequired=not allow_unnotarized_test, signedForDistribution=False, notarized=False, macNativeDryRun=architecture == platform.machine(),
             generatedAt=datetime.now(timezone.utc).isoformat(), purpose='Local staging review only',
             sourceProject=Path(__file__).resolve().parents[2].name,

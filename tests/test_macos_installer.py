@@ -308,20 +308,21 @@ class SealedMacTests(unittest.TestCase):
         build_path = output / 'Contents/Resources/BUILD.json'
         record = json.loads(build_path.read_text())
         # This isolated fixture has a synthetic review identity, never a release identity.
-        record.update(sourceCommit='a' * 40, sourceDirty=[])
+        record.update(sourceCommit='b' * 40, sourceDirty=[])
         build_path.write_text(json.dumps(record))
         signed = Path(self.temp.name) / 'SignedInstaller.app'
-        result = sign_installer.sign(output, signed, 'a' * 40, adhoc_test=True)
+        result = sign_installer.sign(output, signed, 'b' * 40, adhoc_test=True)
         self.assertEqual(result['codeObjectCount'], 1)
         self.assertTrue(result['embeddedCompanionUnchanged'])
+        self.assertEqual(result['embeddedCompanionSourceCommit'], 'a' * 40)
         protected = subprocess.run([str(signed / 'Contents/MacOS/LessonShelfInstaller'), '--stage-ui', '--stage-root', str(Path.home())], capture_output=True, text=True)
         self.assertNotEqual(protected.returncode, 0)
         self.assertIn('separate staging', protected.stderr)
         self.assertEqual(backend.bundle_digest(self.bundle), backend.bundle_digest(signed / 'Contents/Helpers/LessonShelf Companion.app'))
-        plan = notarize_app.notarize(signed, Path(self.temp.name) / 'Notarized.app', 'a' * 40)
+        plan = notarize_app.notarize(signed, Path(self.temp.name) / 'Notarized.app', 'b' * 40)
         self.assertFalse(plan['eligibleForSubmission'])
         with self.assertRaisesRegex(ValueError, 'Developer ID'):
-            notarize_app.notarize(signed, Path(self.temp.name) / 'Notarized.app', 'a' * 40, 'fake-profile', submit=True)
+            notarize_app.notarize(signed, Path(self.temp.name) / 'Notarized.app', 'b' * 40, 'fake-profile', submit=True)
 
 
 if __name__ == '__main__': unittest.main()

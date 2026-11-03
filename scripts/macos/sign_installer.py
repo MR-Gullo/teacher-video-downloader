@@ -40,8 +40,15 @@ def inspect(app, reviewed_source):
     spec = json.loads((payload / 'payload.json').read_text())
     validate(payload, spec['target'])
     provenance = json.loads((payload / 'PROVENANCE.json').read_text())
-    if provenance['sourceCommit'] != reviewed_source or provenance['sourceDirty']:
-        raise ValueError('The payload must come from the exact reviewed clean source commit')
+    payload_source = build.get('embeddedCompanionSourceCommit') if embedded.exists() else reviewed_source
+    if provenance['sourceCommit'] != payload_source or provenance['sourceDirty']:
+        raise ValueError('The payload must match its recorded clean companion source commit')
+    if embedded.exists():
+        child_build = json.loads((embedded / 'Contents/Resources/BUILD.json').read_text())
+        if child_build['sourceCommit'] != payload_source or child_build['sourceDirty']:
+            raise ValueError('Embedded companion provenance is inconsistent')
+        if build.get('companionBundleSHA256') != bundle_digest(embedded):
+            raise ValueError('Embedded companion does not match the reviewed installer input')
     objects = [path for path in code_objects(app) if not embedded.exists() or embedded not in path.parents]
     if not objects:
         raise ValueError('No Mach-O signing inputs found')
@@ -69,7 +76,7 @@ def sign(app, output, reviewed_source, identity=None, adhoc_test=False, plan_onl
             if not build.get('embeddedCompanionNotarizationRequired'):
                 raise ValueError('A test-only outer installer cannot be signed for distribution')
             subprocess.run(['xcrun', 'stapler', 'validate', str(embedded)], check=True, capture_output=True)
-    plan = {'inputBundleSHA256': input_bundle_sha, 'component': 'installer' if embedded else 'companion', 'schema': 1, 'sourceCommit': reviewed_source, 'inputApp': str(app), 'inputPayloadSHA256': digest((embedded / 'Contents/Resources/payload/payload.json') if embedded else app / 'Contents/Resources/payload/payload.json'),
+    plan = {'embeddedCompanionSourceCommit': build.get('embeddedCompanionSourceCommit'), 'inputBundleSHA256': input_bundle_sha, 'component': 'installer' if embedded else 'companion', 'schema': 1, 'sourceCommit': reviewed_source, 'inputApp': str(app), 'inputPayloadSHA256': digest((embedded / 'Contents/Resources/payload/payload.json') if embedded else app / 'Contents/Resources/payload/payload.json'),
             'codeObjectCount': len(objects), 'codeObjects': [path.relative_to(app).as_posix() for path in objects],
             'hardenedRuntime': True, 'entitlements': {}, 'libraryValidationDisabled': False,
             'mode': 'adhoc-test' if adhoc_test else 'Developer ID Application', 'notarized': False}

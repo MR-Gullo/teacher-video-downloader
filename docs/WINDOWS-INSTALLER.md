@@ -36,10 +36,28 @@ Start-Process "$task/LessonShelf-0.3.0-windows-x64.exe" -ArgumentList '--install
 
 `--dry-run` is accepted after the staging directory. An extracted embedded archive is checked against the SHA-256 compiled into the bootstrap. The Python backend then verifies every payload file. Temporary extraction files belong only to that invocation. Reinstalling identical verified files is a no-op. An upgrade retains the old app and its prior registration under `rollback/`; it preserves the queue, jobs, partials, downloads and saved output location. Unknown registrations and app folders are refused. An active worker or interrupted installer stops the update. A failed registration restores the old program and registration. An interrupted process leaves recovery evidence for review.
 
+## Native launcher transport check
+
+After the staged EXE install, test the actual managed launcher before browser automation:
+
+```powershell
+python tests/windows_launcher_acceptance.py --app "$stage/AppData/Local/LessonShelf/app" --report "$task/reports/native-launcher.json"
+```
+
+This Windows-only check keeps stdin open while it sends doctor and status frames. It requires replies before EOF, all four bundled tool paths, a real isolated queue database and a clean launcher exit. The C# launcher forwards binary stdin/stdout/stderr explicitly and flushes each chunk. A Python-host-only test cannot qualify this transport.
+
+## FFmpeg source distribution preparation
+
+The exact supplier source cache from build run `41537430436` has been retrieved and verified against its upstream SHA-256. Its 129 source-input archives are indexed without running their code. The accompanying FFmpeg source is commit `f80a436ffd922aebb6d64824b301884da2cc1ee4`; build recipes are commit `58084b7cf4984303a34b610ba3ad8f04059d5d89`. The original download artifacts and hashes are pinned in `scripts/windows/source-distribution.lock.json`.
+
+`package_sources.py --cache DIRECTORY --output NEW_DIRECTORY` verifies these inputs, splits the supplier cache into bounded transport parts, preserves the source archives and supplier license, and creates a manifest, per-archive index and restore helper. The restore helper's output has been verified against the complete upstream ZIP hash. The manifest also identifies the exact FFmpeg and ffprobe executable hashes. This package is separate from the teacher installer.
+
+The staged package is `.scratch/mac-installer-20261103/source-distribution/ffmpeg-windows-20261102`. Before publication, parent review must approve the complete source offer and publish its parts, manifest, helper, recipes, source archive and licenses alongside the binary release. An expiring Actions artifact is not the intended durable source offer. [GNU guidance on binary/source access](https://www.gnu.org/licenses/gpl-faq.en.html#SourceAndBinaryOnDifferentSites).
+
 ## Release gates
 
-The current Windows candidate is built locally and has not yet run on Windows. Parent-owned CI must execute the installer, run all four real tools and bundled Python, verify native messaging and perform the Firefox download acceptance test. Mac staging and registry projection tests do not count as Windows evidence.
+Real Windows CI has fetched the pinned inputs, compiled the native launcher and installer, assembled the full payload and executed a staged EXE install successfully. Full native-message/browser acceptance is still being repaired and must pass on the final source revision. The early transport check above tests the actual launch-host.exe. Mac staging and registry projection tests do not count as Windows evidence.
 
-The input lock pins CPython 3.13.18 from the official Astral Python Build Standalone release 20261026, yt-dlp 2026.10.26, N_m3u8DL-RE 0.6.0-beta and the yt-dlp project's versioned FFmpeg build. Upstream SHA-256 values are verified before assembly. FFmpeg's upstream project publishes source; this Windows binary is explicitly a downstream yt-dlp project build. Keep the GPL license and review complete corresponding-source availability before public distribution. Do not describe that gate as complete.
+The input lock pins CPython 3.13.18 from the official Astral Python Build Standalone release 20261026, yt-dlp 2026.10.26, N_m3u8DL-RE 0.6.0-beta and the yt-dlp project's versioned FFmpeg build. Upstream SHA-256 values are verified before assembly. FFmpeg's upstream project publishes source; this Windows binary is explicitly a downstream yt-dlp project build. The corresponding source package is prepared and hash checked as described above. Parent source-offer review and publication remain pending; no legal approval or published source offer is claimed.
 
 The candidate has no Authenticode signature or SmartScreen reputation evidence. Before colleague sharing, inventory the appropriate code-signing identity on the Windows signing host, sign the reviewed executable, verify its signature, and test an actual browser download under normal Windows security policy. Do not instruct teachers to bypass security warnings or change execution policy. Public artifact publication and the extension link remain parent-owned review steps. No local Windows install, registry edit, workflow write, publication or browser change occurred in this installer chat.

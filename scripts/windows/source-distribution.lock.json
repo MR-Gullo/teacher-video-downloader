@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "binaryPackageKey": "ffmpeg-windows-x64",
+  "supplierBuildRun": 41537430436,
+  "sourceCache": {
+    "filename": "ffmpeg-source-cache.zip",
+    "url": "https://api.github.com/repos/yt-dlp/FFmpeg-Builds/actions/artifacts/13184773401/zip",
+    "artifactId": 13184773401,
+    "sha256": "d1227e4097221070f31403b64bb18478360f56b2ebc64e2edf617bbeb8118ad2",
+    "bytes": 2241191659
+  },
+  "recipe": {
+    "filename": "ffmpeg-windows-recipes-58084b7.tar.gz",
+    "url": "https://github.com/yt-dlp/FFmpeg-Builds/archive/58084b7cf4984303a34b610ba3ad8f04059d5d89.tar.gz",
+    "commit": "58084b7cf4984303a34b610ba3ad8f04059d5d89",
+    "sha256": "875d7364c09411aba18a221c5c3ea16ebb21d7dc1a877a7479297332321d54e2",
+    "bytes": 118533
+  },
+  "ffmpeg": {
+    "filename": "ffmpeg-windows-source-f80a436.tar.gz",
+    "url": "https://github.com/FFmpeg/FFmpeg/archive/f80a436ffd922aebb6d64824b301884da2cc1ee4.tar.gz",
+    "commit": "f80a436ffd922aebb6d64824b301884da2cc1ee4",
+    "sha256": "8e59a733200eb5ccbb78d91d4d347eb5bbdc71138b094bcaea27f837bead00fa",
+    "bytes": 18101295
+  }
+}
