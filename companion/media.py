@@ -1,5 +1,5 @@
 """Non-destructive classroom/storage copies; exact executable argv, never a shell."""
-import json, subprocess
+import json, re, subprocess
 from fractions import Fraction
 from pathlib import Path
 
@@ -7,6 +7,18 @@ def probe(path):
     p=subprocess.run(['ffprobe','-v','error','-show_format','-show_streams','-show_chapters','-of','json',str(path)],capture_output=True,timeout=60)
     if p.returncode:raise RuntimeError('Media validation failed')
     return json.loads(p.stdout)
+
+def av1_options():
+    """Select an AV1 encoder actually present in the current FFmpeg."""
+    try:
+        result=subprocess.run(['ffmpeg','-hide_banner','-encoders'],capture_output=True,text=True,timeout=30)
+    except (OSError,subprocess.TimeoutExpired) as e:
+        raise RuntimeError('Could not check the local AV1 encoder.') from e
+    if result.returncode:raise RuntimeError('Could not check the local AV1 encoder.')
+    names=set(re.findall(r'^\s*[A-Z.]{6}\s+(libaom-av1|libsvtav1)\s',result.stdout,re.MULTILINE))
+    if 'libaom-av1' in names:return ['-c:v','libaom-av1','-crf','32','-b:v','0','-cpu-used','6','-pix_fmt','yuv420p']
+    if 'libsvtav1' in names:return ['-c:v','libsvtav1','-crf','32','-preset','6','-pix_fmt','yuv420p']
+    raise RuntimeError('This FFmpeg has no supported AV1 encoder. Original retained in the local job folder.')
 
 def copy_plan(source, mode, source_url=None):
     info=probe(source);video=next((s for s in info['streams'] if s['codec_type']=='video'),None)
@@ -17,7 +29,9 @@ def copy_plan(source, mode, source_url=None):
     dest=Path(source).with_name('classroom.mp4' if mode=='classroom' else 'storage-av1.mp4')
     args=['ffmpeg','-nostdin','-hide_banner','-v','error','-n','-i',str(source),'-map','0:v:0','-map','0:a?','-map','0:s?','-map_metadata','0','-map_chapters','0']
     if mode=='classroom' and codec=='h264' and height<=1080 and video.get('pix_fmt')=='yuv420p':args+=['-c:v','copy']
-    else:args+=['-vf',"scale=w='min(1920,iw)':h='min(1080,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2",'-c:v','libx264' if mode=='classroom' else 'libsvtav1','-crf','20' if mode=='classroom' else '32','-preset','medium' if mode=='classroom' else '6','-pix_fmt','yuv420p']
+    else:
+        args+=['-vf',"scale=w='min(1920,iw)':h='min(1080,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2"]
+        args+=['-c:v','libx264','-crf','20','-preset','medium','-pix_fmt','yuv420p'] if mode=='classroom' else av1_options()
     audio=[s for s in info['streams'] if s['codec_type']=='audio']
     if source_url:args+=['-metadata','comment='+source_url]
     args+=['-c:a','copy' if all(s.get('codec_name')=='aac' for s in audio) else 'aac','-c:s','mov_text','-movflags','+faststart',str(dest)]
@@ -39,7 +53,7 @@ def standard_plan(source, quality='720', include_subtitles=True, codec='h264'):
     if compatible:args+=['-c:v','copy']
     else:
         if cap:args+=['-vf',f"scale=w='if(gte(iw,ih),min(iw,{cap}*iw/ih),min(iw,{cap}))':h='if(gte(iw,ih),min(ih,{cap}),min(ih,{cap}*ih/iw))':force_original_aspect_ratio=decrease:force_divisible_by=2"]
-        args+=['-c:v','libx264' if codec=='h264' else 'libsvtav1','-crf','20' if codec=='h264' else '32','-preset','medium' if codec=='h264' else '6','-pix_fmt','yuv420p']
+        args+=['-c:v','libx264','-crf','20','-preset','medium','-pix_fmt','yuv420p'] if codec=='h264' else av1_options()
     args+=['-c:a','copy' if all(s.get('codec_name')=='aac' for s in audio) else 'aac']
     if include_subtitles:args+=['-c:s','mov_text']
     args+=['-movflags','+faststart',str(dest)]
@@ -71,5 +85,8 @@ def validate_copy(source_info,dest,source,mode, runner=None):
     if mode=='standard' and b:
         if b.get('codec_name')!='h264' or b.get('pix_fmt')!='yuv420p':raise RuntimeError('MP4 video is not H.264 yuv420p')
         if any(x.get('codec_name')!='aac' for x in info['streams'] if x.get('codec_type')=='audio'):raise RuntimeError('MP4 audio is not AAC')
+    if mode in ('av1','av1-output') and b:
+        if b.get('codec_name')!='av1' or b.get('pix_fmt')!='yuv420p':raise RuntimeError('Output video is not AV1 yuv420p')
+        if any(x.get('codec_name')!='aac' for x in info['streams'] if x.get('codec_type')=='audio'):raise RuntimeError('AV1 output audio is not AAC')
     if mode=='av1' and dest.stat().st_size>Path(source).stat().st_size*.85:return False
     return True

@@ -26,6 +26,23 @@ class Media(unittest.TestCase):
     args,dest,info=media.standard_plan(source,'360');dest.unlink(missing_ok=True);subprocess.run(args,check=True)
     video=next(x for x in media.probe(dest)['streams'] if x['codec_type']=='video')
     self.assertEqual((video['width'],video['height']),expected)
+ def test_av1_encoder_selection(self):
+  from types import SimpleNamespace
+  samples=[(' V..... libaom-av1 AOM\n V..... libsvtav1 SVT\n','libaom-av1'),(' V..... libsvtav1 SVT\n','libsvtav1')]
+  for text,name in samples:
+   with self.subTest(name=name),patch.object(media.subprocess,'run',return_value=SimpleNamespace(returncode=0,stdout=text)):
+    args=media.av1_options();self.assertEqual(args[args.index('-c:v')+1],name)
+    self.assertIn('-cpu-used' if name=='libaom-av1' else '-preset',args)
+  with patch.object(media.subprocess,'run',return_value=SimpleNamespace(returncode=0,stdout=' V..... libx264 x264\n')):
+   with self.assertRaisesRegex(RuntimeError,'no supported AV1 encoder'):media.av1_options()
+ def test_actual_av1_output_validates(self):
+  with tempfile.TemporaryDirectory() as tmp:
+   source=Path(tmp)/'source.mkv'
+   subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','testsrc2=size=320x180:rate=24','-f','lavfi','-i','sine=frequency=440','-t','0.5','-c:v','libx264','-c:a','aac',str(source)],check=True)
+   args,dest,info=media.standard_plan(source,'720',codec='av1');subprocess.run(args,check=True)
+   self.assertTrue(media.validate_copy(info,dest,source,'av1-output'));actual=media.probe(dest)
+   self.assertEqual(next(s for s in actual['streams'] if s['codec_type']=='video')['codec_name'],'av1')
+   self.assertEqual(next(s for s in actual['streams'] if s['codec_type']=='audio')['codec_name'],'aac');self.assertTrue(source.exists())
  def test_standard_mp4_real_codecs(self):
   with tempfile.TemporaryDirectory() as tmp:
    root=Path(tmp)

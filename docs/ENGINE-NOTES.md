@@ -15,7 +15,7 @@ Official current English reference: https://github.com/nilaoda/N_m3u8DL-RE/blob/
 
 ## FFmpeg
 
-Actual VM synthetic-media tests run successfully. Encoder availability differs by package; use `ffmpeg -encoders` on the Mac to confirm libx264, AAC and optional libsvtav1. Official tools and stream mapping: https://ffmpeg.org/ffmpeg.html . No shell string interpolation. Original source kept. AV1 is an opt-in storage copy, not the recommended projector format.
+Actual VM synthetic-media tests run successfully. Encoder availability differs by package. The optional AV1 output checks `ffmpeg -encoders`, prefers libaom-av1 and falls back to libsvtav1. If neither is present it reports the missing encoder and retains the original. Official tools and stream mapping: https://ffmpeg.org/ffmpeg.html . No shell string interpolation. Original source kept. AV1 is an opt-in storage copy, not the recommended projector format.
 
 ## aria2c
 
