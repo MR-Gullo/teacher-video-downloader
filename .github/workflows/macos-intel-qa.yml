@@ -1,0 +1,74 @@
+name: Intel Mac offline installer acceptance
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-intel-qa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  acceptance:
+    runs-on: macos-15-intel
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    env:
+      QA_ROOT: .scratch/mac-installer-20261103/intel-ci
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.13'
+      - name: Verify the native Intel host and build tools
+        run: |
+          set -euo pipefail
+          mkdir -p "$QA_ROOT/reports"
+          test "$(uname -m)" = x86_64
+          for tool in clang cmake ninja pkg-config make tar codesign xcrun; do command -v "$tool"; done
+          { sw_vers; uname -m; python --version; xcrun swiftc --version; clang --version; cmake --version; ninja --version; pkg-config --version; git rev-parse HEAD; } > "$QA_ROOT/reports/host.txt"
+      - name: Fetch hash-locked Intel dependencies
+        run: |
+          set -euo pipefail
+          python scripts/macos/fetch_dependencies.py --cache "$QA_ROOT/upstream" --package python-macos-x64 --package python-licenses-macos-x64 --package n-macos-x64 --package ytdlp-python --package n-license --package ytdlp-license --package ytdlp-third-party --package ffmpeg-source --package x264-source --package aom-source
+      - name: Build FFmpeg and its pinned codec sources
+        run: |
+          set -euo pipefail
+          python scripts/macos/build_ffmpeg.py --architecture x86_64 --work "$QA_ROOT/ffmpeg" --cache "$QA_ROOT/upstream"
+      - name: Assemble and ad hoc sign the sealed companion
+        run: |
+          set -euo pipefail
+          version=$(python -c 'import json; print(json.load(open("extension/manifest.firefox.json"))["version"])')
+          python scripts/macos/prepare_payload.py --target macos-x64 --version "$version" --firefox-id teacher-video-downloader@local.invalid --cache "$QA_ROOT/upstream" --ffmpeg-build "$QA_ROOT/ffmpeg" --output "$QA_ROOT/payload"
+          python scripts/macos/build_companion.py --payload "$QA_ROOT/payload" --output "$QA_ROOT/Companion-unsigned.app"
+          python scripts/macos/sign_installer.py --app "$QA_ROOT/Companion-unsigned.app" --output "$QA_ROOT/Companion-adhoc.app" --reviewed-source "$(git rev-parse HEAD)" --adhoc-test
+      - name: Run bundled tools, native messaging, and full MP4 decode
+        run: |
+          set -euo pipefail
+          python scripts/macos/verify_payload.py --companion-app "$QA_ROOT/Companion-adhoc.app" --work "$QA_ROOT/native-check" --report "$QA_ROOT/reports/native-and-mp4.json"
+      - name: Build and execute the native installer in an isolated account
+        run: |
+          set -euo pipefail
+          python scripts/macos/build_installer.py --companion-app "$QA_ROOT/Companion-adhoc.app" --output "$QA_ROOT/Installer-unsigned.app" --allow-unnotarized-test
+          python scripts/macos/sign_installer.py --app "$QA_ROOT/Installer-unsigned.app" --output "$QA_ROOT/Installer-adhoc.app" --reviewed-source "$(git rev-parse HEAD)" --adhoc-test
+          "$QA_ROOT/Installer-adhoc.app/Contents/MacOS/LessonShelfInstaller" --companion-app "$PWD/$QA_ROOT/Installer-adhoc.app/Contents/Helpers/LessonShelf Companion.app" --stage-root "$PWD/$QA_ROOT/Installer test account" > "$QA_ROOT/reports/native-installer.json"
+          codesign --verify --deep --strict "$QA_ROOT/Installer test account/Library/Application Support/Teacher Video Downloader/app/LessonShelf Companion.app"
+          cp "$QA_ROOT/Companion-adhoc.app.signing.json" "$QA_ROOT/reports/companion-signing.json"
+          cp "$QA_ROOT/Installer-adhoc.app.signing.json" "$QA_ROOT/reports/installer-signing.json"
+          cp "$QA_ROOT/payload/PROVENANCE.json" "$QA_ROOT/reports/payload-provenance.json"
+      - name: Retain synthetic evidence and source build diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: macos-intel-evidence-adhoc-only
+          path: |
+            .scratch/mac-installer-20261103/intel-ci/reports/
+            .scratch/mac-installer-20261103/intel-ci/ffmpeg/build.log
+            .scratch/mac-installer-20261103/intel-ci/ffmpeg/build-commands.json
+            .scratch/mac-installer-20261103/intel-ci/ffmpeg/SOURCE-LOCK.json
+          if-no-files-found: warn
+          retention-days: 7
