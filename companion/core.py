@@ -153,7 +153,8 @@ def engine_argv(d,work, help_text=None):
             if q!='best':
                 pattern=quality_resolution_pattern(q);f=f'bv*[resolution~=?"{pattern}"]+ba/b[resolution~=?"{pattern}"]'
             a+=['-f',f,'--merge-output-format','mkv']
-            if q!='best':a+=['-S',f'res:{q}']
+            if q!='best':a+=['-S',f'res:{q},vcodec:h264,acodec:aac']
+            else:a+=['-S','vcodec:h264,acodec:aac']
         if d['captions'] and not d['audio']:a+=['--write-subs','--write-auto-subs','--sub-langs','en.*,en','--convert-subs','srt','--embed-subs']
         return a+['--',d['url']]
     known=d.get('_known_n',False)
