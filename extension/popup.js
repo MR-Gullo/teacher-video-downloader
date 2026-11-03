@@ -3,7 +3,9 @@ const api=globalThis.browser||chrome;
 const $=id=>document.getElementById(id);
 const privateMode=Boolean(api.extension?.inIncognitoContext);
 const firefox=Boolean(api.runtime.getManifest?.().browser_specific_settings?.gecko);
-const revealLabel=typeof navigator!=='undefined'&&/Win/i.test(navigator.platform||navigator.userAgent)?'Show in folder':'Show in Finder';
+const windows=typeof navigator!=='undefined'&&/Win/i.test(navigator.platform||navigator.userAgent);
+const revealLabel=windows?'Show in folder':'Show in Finder';
+if(windows){$('setup-link').href='setup-windows.html';$('setup-link').textContent='Windows setup for this preview';}
 const dataPermissions={data_collection:['browsingActivity','websiteContent']};
 const settingIds=['quality','audio','captions','copy','course','output-format'];
 let source=null,players=[],pageSnapshot=null,consent=!firefox,busy=false,polling=false,lastJobId=null,lastDownload=null,lastDownloads=[],lastRenderedJobs='',currentJob=null,lastJobs=[],pasteBinding=null,jobStatusText='';

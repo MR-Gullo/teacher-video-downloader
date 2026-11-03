@@ -11,7 +11,7 @@ api.runtime.onMessage.addListener((message, sender, respond) => {
       if(!granted)return {ok:false,error:'Allow local companion access to view or manage the queue. Direct browser downloads remain available.'};
     }
     return await api.runtime.sendNativeMessage(HOST,message.request);
-  })().then(respond).catch(() => respond({ok:false,error:'Local companion not connected. Direct file downloads still work in your browser. On Mac, see the setup guide to enable the queue and conversion.',missingHost:true}));
+  })().then(respond).catch(() => respond({ok:false,error:'Local companion not connected. Direct file downloads still work in your browser. Open Help & setup to check the connection.',missingHost:true}));
   return true;
 });
 // Remove legacy captured links at startup; they are no longer collected.
