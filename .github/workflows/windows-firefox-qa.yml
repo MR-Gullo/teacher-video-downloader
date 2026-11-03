@@ -46,7 +46,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Selenium installation failed' }
       - name: Fetch and verify pinned offline dependencies
         run: |
-          python scripts/macos/fetch_dependencies.py --cache "$env:QA_ROOT/upstream" --package python-windows-x64 --package python-licenses-windows-x64 --package n-windows-x64 --package ytdlp-windows-x64 --package ffmpeg-windows-x64 --package n-license --package ytdlp-license --package ytdlp-third-party
+          python scripts/macos/fetch_dependencies.py --cache "$env:QA_ROOT/upstream" --package python-windows-x64 --package python-licenses-windows-x64 --package n-windows-x64 --package ytdlp-windows-x64 --package ffmpeg-windows-x64 --package deno-windows-x64 --package deno-source --package n-license --package ytdlp-license --package ytdlp-third-party
           if ($LASTEXITCODE -ne 0) { throw 'Dependency verification failed' }
       - name: Build the Windows installer and payload
         run: |
