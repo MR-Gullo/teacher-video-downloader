@@ -148,6 +148,27 @@ def main():
             jobs=driver.find_element(By.ID,'jobs').text
             if 'Show in Finder' not in jobs and 'Show in folder' not in jobs:raise RuntimeError('Saved job has no reveal action.')
             driver.save_screenshot(str(artifacts/'firefox-reopened-queue.png'))
+            driver.find_element(By.ID,'back').click()
+            driver.find_element(By.CSS_SELECTOR,'#help-panel summary').click()
+            driver.find_element(By.ID,'doctor').click()
+            wait.until(lambda d:'yt-dlp:' in d.find_element(By.ID,'doctor-result').text)
+            tools=driver.find_element(By.ID,'doctor-result').text
+            for required in ('yt-dlp: available','ffmpeg: available','ffprobe: available'):
+                if required not in tools:raise RuntimeError('Bundled required tool did not pass the real tool check: '+required)
+            optional=app/'tools/N_m3u8DL-RE.exe'
+            if optional.exists():
+                if 'N_m3u8DL-RE: available; checked per video' not in tools:
+                    raise RuntimeError('Bundled optional engine did not pass the real tool check.')
+                hidden=optional.with_name(optional.name+'.acceptance-hidden')
+                if hidden.exists():raise RuntimeError('Refusing to overwrite an existing staged test file.')
+                optional.rename(hidden)
+                try:
+                    driver.find_element(By.ID,'doctor').click()
+                    wait.until(lambda d:'N_m3u8DL-RE: not found' in d.find_element(By.ID,'doctor-result').text)
+                finally:hidden.rename(optional)
+            elif 'N_m3u8DL-RE: not found' not in tools:
+                raise RuntimeError('Missing optional engine was not reported honestly.')
+            driver.save_screenshot(str(artifacts/'firefox-tool-check.png'))
             files=list((stage/'Downloads/youtube-downloads').glob('*.mp4'))
             if len(files)!=1:raise RuntimeError('Expected exactly one published MP4; found '+str(len(files)))
             report=json.loads(subprocess.run([str(ffprobe),'-v','error','-show_streams','-show_format','-of','json',str(files[0])],check=True,capture_output=True,text=True,timeout=30).stdout)
@@ -156,7 +177,7 @@ def main():
                 raise RuntimeError('Output codecs or dimensions do not meet the standard profile.')
             subprocess.run([str(ffmpeg),'-v','error','-xerror','-i',str(files[0]),'-f','null','-'],check=True,timeout=120)
             result={'platform':'Windows x64','browser':'Firefox headless','addon':'signed' if args.signed else 'temporary',
-                    'progress_observed':observed_progress,'reopened_queue':True,'codec':'H.264 yuv420p + AAC',
+                    'progress_observed':observed_progress,'reopened_queue':True,'required_tools':True,'optional_engine_missing_check':True,'codec':'H.264 yuv420p + AAC',
                     'width':video['width'],'height':video['height'],'duration':report['format'].get('duration')}
             (artifacts/'result.json').write_text(json.dumps(result,indent=2)+'\n',encoding='utf-8')
             print(json.dumps(result))
