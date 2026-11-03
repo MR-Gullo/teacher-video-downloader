@@ -18,7 +18,7 @@ The installer refuses an active worker, unknown registration, unregistered app f
 
 The selected Firefox ID is either `teacher-video-downloader@local.invalid` for the signed extension or `lessonshelf-preview@local.invalid` for preview testing. Registration grants only the selected ID. Chrome remains paused. Windows ARM64 is outside this candidate.
 
-The runtime can inspect `app/payload.json` and `app/PROVENANCE.json` for installed-file integrity and the exact pinned N release. It must compare the executable against the approved binary hash, then check compatibility for each video. The authentic 0.6.0-beta executable SHA-256 values are:
+The runtime can inspect the sealed app's `Contents/Resources/payload/payload.json` and `PROVENANCE.json` for installed-file integrity and the exact pinned N release. It must identify the approved binary, then check compatibility for each video. The authentic unsigned 0.6.0-beta executable SHA-256 values are:
 
 | Target | Binary SHA-256 |
 | --- | --- |
@@ -28,7 +28,7 @@ The runtime can inspect `app/payload.json` and `app/PROVENANCE.json` for install
 
 Code signing changes Mac executable bytes. `PROVENANCE.json` retains `toolSourceSHA256` from verified upstream inputs. Recompute `payload.json` file hashes after signing, but preserve these source hashes. The runtime owner must account for the signed-file receipt when identifying the approved build.
 
-The runtime recognizes these verified source binaries and still checks required help options and each video. The signing path needs the signed-file receipt integration described above. A receipt alone must not force an available status or skip per-video checks.
+The runtime recognizes these verified source binaries. For a signed Mac N executable, it verifies the code signature and compares the normalized Mach-O content against the pinned source build. It still checks required help options and each video. A receipt alone must not force an available status or skip per-video checks.
 
 ## Reproducible local build
 
@@ -53,6 +53,10 @@ Mac yt-dlp uses the official universal Python zipapp with a small launcher into 
 
 The dependency lock pins CPython 3.13.18 from the official Astral Python Build Standalone release 20261026, yt-dlp 2026.10.26 and N_m3u8DL-RE 0.6.0-beta. Astral's runtime is a maintained relocatable CPython build, not a Python Software Foundation installer. Its full distribution supplies transitive license notices and licensing metadata. All archive hashes match upstream release metadata. Mac FFmpeg 9.0.2 is built with pinned upstream x264 and AOM 3.14.1 sources. Its detached signature verified against the fingerprint published on ffmpeg.org. The bundle includes the source archives, build commands and applicable notices. [Python Build Standalone](https://github.com/astral-sh/python-build-standalone), [FFmpeg downloads and verification](https://ffmpeg.org/download.html), [yt-dlp releases](https://github.com/yt-dlp/yt-dlp/releases), [N releases](https://github.com/nilaoda/N_m3u8DL-RE/releases).
 
+The self-contained N binaries for all three targets embed .NET 10.0.9. `scripts/macos/licenses/n-runtime` retains that runtime's MIT license and third-party notices, plus System.CommandLine and Spectre.Console/Ansi notices. Its provenance records the official NuGet package hashes and source commits. The assembler copies these notices into each payload.
+
+Intel CI found that Google's generated Git archive changes compressed bytes between requests, although all 1,445 source files were identical. The lock now uses the static `libaom-3.14.1.tar.gz` release archive linked by AOMedia. Its SHA-256 is `44bf90dbd23e734d50e70a8c41c285193922938bd0d3bc2ee56764d181d55ef5`. A fresh fetch passes the hash check, and every source file matches the previous archive. Earlier source builds remain retained as evidence. [AOMedia release and archive](https://aomedia.org/blog%20posts/AOMedia-Announces-Availability-of-Libaom-v3_14/).
+
 ## Verification and release boundary
 
 ```sh
@@ -60,7 +64,9 @@ rtk proxy python3 -m unittest discover -s tests -p test_macos_installer.py -v
 rtk proxy python3 scripts/macos/verify_payload.py --companion-app 'PATH/TO/SEALED-COMPANION.app' --work .scratch/mac-installer-20261103/sealed-check --report .scratch/mac-installer-20261103/sealed-check.json
 ```
 
-All 23 focused tests pass on this Apple Silicon Mac. They include byte-for-byte sealed-bundle preservation after installation and native launch, tamper refusal, legacy upgrade preservation, strict inner/outer code-signature checks and refusal to submit an ad hoc app for notarization. Windows registry projection tests prove portable transaction logic only. The real Apple Silicon payload checker runs bundled Python and all four tools, stages installation, checks the native doctor, creates AV1/AAC synthetic media, converts it to H.264/AAC MP4 and decodes the result. The current unsigned-payload checks pass. A new real sealed-bundle check is required for each final source snapshot. No OS security setting or quarantine attribute is changed.
+All 23 focused tests pass on this Apple Silicon Mac. They include byte-for-byte sealed-bundle preservation after installation and native launch, tamper refusal, legacy upgrade preservation, strict inner/outer code-signature checks and refusal to submit an ad hoc app for notarization. Windows registry projection tests prove portable transaction logic only. The real Apple Silicon sealed-bundle check at source `af352d8` passes with bundled Python and all four tools. It stages installation, checks the native doctor, creates AV1/AAC synthetic media, converts it to H.264/AAC MP4 and decodes the result. The installed app remains byte-for-byte unchanged. Evidence is retained at `.scratch/mac-installer-20261103/af352d8/sealed-arm64-check.json`. A new check is required for each final source snapshot. No OS security setting or quarantine attribute is changed.
+
+The manual `.github/workflows/macos-intel-qa.yml` workflow runs the equivalent native Intel acceptance on the standard `macos-15-intel` runner. It builds the pinned codec sources, uses ad hoc signatures only and runs the native outer installer against an explicit scratch account. It retains synthetic reports and build diagnostics for seven days. It has no signing secrets, publication step or GUI test. Parent review owns dispatch and result review.
 
 Apple explicitly requires two notarization passes for a custom installer. First sign and notarize the companion app and staple its ticket. Then embed that exact app in the outer installer, sign the outer installer, notarize it, staple its ticket and create the final ZIP. Standalone binaries cannot hold stapled tickets, which is why the installed payload is now a sealed app. [Apple workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow).
 
@@ -70,7 +76,7 @@ Apple explicitly requires two notarization passes for a custom installer. First 
 
 1. Confirm an active Apple Developer Program membership. In Xcode, open Settings, then Accounts, sign in and choose the paid developer team rather than a Personal Team. Leave sign-in and MFA to the account holder.
 2. Open Manage Certificates, click + and create **Developer ID Application**. Apple Development, Mac Distribution and Developer ID Installer are different certificate types. For the account website route, the Account Holder opens Certificates, Identifiers & Profiles, adds Developer ID Application, creates a certificate signing request on this Mac, uploads the request, downloads the certificate and double-clicks it to install. The certificate must have its matching private key under Keychain Access > My Certificates. Do not export or send the key. [Apple certificate instructions](https://developer.apple.com/help/account/certificates/create-developer-id-certificates).
-3. In the Apple Account security settings, create an app-specific password for notarization. In the account holder's own Terminal window, run the following command. Supply the Apple ID, Team ID and app-specific password only to its interactive prompts. The tool validates and stores the credentials in Keychain.
+3. At [account.apple.com](https://account.apple.com), open Sign-In and Security, then App-Specific Passwords, and create a password for notarization. Two-factor authentication must be enabled. In the account holder's own Terminal window, run the following command. Supply the Apple ID, Team ID and app-specific password only to its interactive prompts. The tool validates and stores the credentials in Keychain. [Apple password instructions](https://support.apple.com/en-us/102654).
 
 ```sh
 xcrun notarytool store-credentials "LessonShelf-notary"
@@ -92,4 +98,4 @@ Credential-enabled signing and submission also require `--reviewed-bundle-sha256
 
 Both signing calls take `--identity 'Developer ID Application: ...'` and `--reviewed-source FULL_COMMIT`. Both notarization calls take `--keychain-profile LessonShelf-notary --submit` and its own reviewed component commit. The outer installer records the embedded companion source commit separately, so later installer changes never require altering a previously notarized companion. All commands take new `--output` paths. Account credentials stay in the approved signing environment. No signing credential or notarization submission was used for the preparation tests.
 
-Before release, complete native Intel execution, real Windows Firefox acceptance, the actual Mac installer UI task, clean-Mac browser-download and offline launch checks, and the Windows source/license and Authenticode review. Parent review owns publication and extension download links. No installed companion, live registration, queue, download, browser UI or public setup page was changed by this installer work. Earlier candidates and staging evidence remain retained in the task scratch folder while release work is unfinished.
+Before release, complete native Intel execution, real Windows Firefox acceptance, the actual Mac installer UI task, clean-Mac browser-download and offline launch checks, and the Windows source/license and Authenticode review. The staged Mac GUI check is blocked because Computer Use reports the Mac is locked and automatic unlock is paused. It must wait for a human unlock. Parent review owns publication and extension download links. No installed companion, live registration, queue, download, browser UI or public setup page was changed by this installer work. Earlier candidates and staging evidence remain retained in the task scratch folder while release work is unfinished.
