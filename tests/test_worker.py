@@ -56,6 +56,42 @@ class Worker(unittest.TestCase):
     self.assertEqual(worker.run_windows(db,row['id'],command,'running',diagnostic),1)
    self.assertEqual(db.execute('SELECT progress FROM jobs').fetchone()[0],42)
    self.assertIn('rate_limited',diagnostic);db.close()
+ @unittest.skipUnless(sys.platform=='darwin','Mac PTY behavior')
+ def test_n_terminal_geometry_and_failure_classification(self):
+  import os
+  with tempfile.TemporaryDirectory() as d:
+   core.STATE=Path(d);db=core.setup();core.handle({'op':'enqueue','jobs':[{'url':'https://example.com/video'}]},False)
+   row=db.execute('SELECT * FROM jobs').fetchone();core.update(db,row['id'],status='running');fd=os.open(Path(d)/'lock',os.O_CREAT|os.O_RDWR,0o600);diagnostic=[]
+   command=[sys.executable,'-c',"import os,sys; s=os.get_terminal_size(1); print('HTTP 403 Forbidden' if os.isatty(1) and (s.columns,s.lines)==(120,40) else 'wrong terminal',flush=True); sys.exit(1)"]
+   try:
+    self.assertEqual(worker.run(db,row['id'],command,fd,diagnostic=diagnostic,terminal=True),1)
+    self.assertIn('access_denied',diagnostic)
+   finally:os.close(fd);db.close()
+ @unittest.skipUnless(sys.platform=='darwin','Mac PTY behavior')
+ def test_n_terminal_child_inherits_worker_lock(self):
+  import fcntl,os
+  with tempfile.TemporaryDirectory() as d:
+   core.STATE=Path(d);db=core.setup();core.handle({'op':'enqueue','jobs':[{'url':'https://example.com/video'}]},False)
+   row=db.execute('SELECT * FROM jobs').fetchone();core.update(db,row['id'],status='running');path=Path(d)/'lock';fd=os.open(path,os.O_CREAT|os.O_RDWR,0o600);fcntl.flock(fd,fcntl.LOCK_EX)
+   command=[sys.executable,'-c',"import os,sys,fcntl; fd=int(sys.argv[1]); os.fstat(fd); fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB); other=os.open(sys.argv[2],os.O_RDWR);\ntry: fcntl.flock(other,fcntl.LOCK_EX|fcntl.LOCK_NB); sys.exit(2)\nexcept BlockingIOError: sys.exit(0)",str(fd),str(path)]
+   try:self.assertEqual(worker.run(db,row['id'],command,fd,terminal=True),0)
+   finally:os.close(fd);db.close()
+ @unittest.skipUnless(sys.platform=='darwin','Mac PTY behavior')
+ def test_terminal_cancel_and_spawn_failure_close_descriptors(self):
+  import os
+  class StatusDB:
+   def __init__(self,status):self.calls=0;self.status=status
+   def execute(self,*args):self.calls+=1;return self
+   def fetchone(self):return ('running',) if self.calls==1 else (self.status,)
+  with tempfile.TemporaryDirectory() as d:
+   fd=os.open(Path(d)/'lock',os.O_CREAT|os.O_RDWR,0o600);before=len(os.listdir('/dev/fd'))
+   try:
+    for status in ('paused','cancelled','cancelled'):
+     self.assertIsNone(worker.run(StatusDB(status),'job',[sys.executable,'-c','import time; time.sleep(30)'],fd,terminal=True))
+     self.assertIsNone(worker.CHILD)
+    with self.assertRaises(FileNotFoundError):worker.run(StatusDB('cancelled'),'job',[str(Path(d)/'missing')],fd,terminal=True)
+    self.assertEqual(len(os.listdir('/dev/fd')),before)
+   finally:os.close(fd)
  def test_cancel_at_engine_exit_is_not_completed(self):
   with tempfile.TemporaryDirectory() as d:
    core.STATE=Path(d);worker.STATE=core.STATE;db=core.setup()

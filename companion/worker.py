@@ -78,35 +78,67 @@ def output_categories(output):
     if b'unhandled exception' in text and b'spectre.console' in text:categories.append('engine_console_error')
     return categories
 
-def run(db,id,argv,lockfd,phase='running',diagnostic=None):
+def run(db,id,argv,lockfd,phase='running',diagnostic=None,terminal=False):
     global CHILD
     if sys.platform=='win32':return run_windows(db,id,argv,phase,diagnostic)
-    # Engine inherits flock: even SIGKILL of worker cannot permit concurrent writer.
-    CHILD=subprocess.Popen(argv,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True,pass_fds=(lockfd,))
-    os.set_blocking(CHILD.stdout.fileno(),False);buf=b'';last=0
-    while CHILD.poll() is None:
-        row=db.execute('SELECT status FROM jobs WHERE id=?',(id,)).fetchone()
-        if STOP or row[0]!=phase:
-            try:os.killpg(CHILD.pid,signal.SIGTERM)
-            except ProcessLookupError:pass
-            try:CHILD.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                os.killpg(CHILD.pid,signal.SIGKILL);CHILD.wait()
-            return None
-        ready,_,_=select.select([CHILD.stdout],[],[],.2)
-        if ready:
-            chunk=CHILD.stdout.read(8192) or b'';buf=(buf+chunk)[-16384:]
+    master=slave=None;child=None;buf=b'';last=0;eof=False
+    use_pty=terminal and sys.platform=='darwin'
+    try:
+        if use_pty:
+            import errno,pty,struct,termios
+            master,slave=pty.openpty()
+            fcntl.ioctl(slave,termios.TIOCSWINSZ,struct.pack('HHHH',40,120,0,0))
+        # Engine inherits flock: even SIGKILL of worker cannot permit concurrent writer.
+        child=subprocess.Popen(argv,stdin=subprocess.DEVNULL,stdout=slave if use_pty else subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True,pass_fds=(lockfd,))
+        CHILD=child
+        if slave is not None:os.close(slave);slave=None
+        fd=master if use_pty else child.stdout.fileno()
+        os.set_blocking(fd,False)
+        def read_output():
+            nonlocal buf,eof,last
+            try:chunk=os.read(fd,8192)
+            except BlockingIOError:return
+            except OSError as e:
+                if use_pty and e.errno==errno.EIO:eof=True;return
+                raise
+            if not chunk:eof=True;return
+            buf=(buf+chunk)[-16384:]
             # Never persist arbitrary engine output: it can contain signed URLs/tokens.
             matches=re.findall(rb'TVD:\s*([0-9.]+)%',buf)
             if matches and time.time()-last>.5:
                 update(db,id,progress=min(99,float(matches[-1])),message='Downloading');last=time.time();buf=b''
-    # Drain output written immediately before exit; retain only a fixed category.
-    try:buf=(buf+(CHILD.stdout.read() or b''))[-16384:]
-    except BlockingIOError:pass
-    if diagnostic is not None:
-        lower=re.sub(rb'https?://[^\s"<>]+',b'[url]',buf.lower())
-        diagnostic.extend(output_categories(lower))
-    return CHILD.returncode
+        while child.poll() is None:
+            row=db.execute('SELECT status FROM jobs WHERE id=?',(id,)).fetchone()
+            if STOP or not row or row[0]!=phase:
+                terminate_child(child)
+                try:child.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    try:os.killpg(child.pid,signal.SIGKILL)
+                    except ProcessLookupError:pass
+                    child.wait()
+                return None
+            if eof:time.sleep(.2);continue
+            ready,_,_=select.select([fd],[],[],.2)
+            if ready:read_output()
+        # Drain available output written immediately before exit.
+        while not eof:
+            ready,_,_=select.select([fd],[],[],0)
+            if not ready:break
+            read_output()
+        if diagnostic is not None:diagnostic.extend(output_categories(buf))
+        return child.returncode
+    finally:
+        if child is not None and child.poll() is None:
+            terminate_child(child)
+            try:child.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                try:os.killpg(child.pid,signal.SIGKILL)
+                except ProcessLookupError:pass
+                child.wait()
+        if child is not None and child.stdout is not None:child.stdout.close()
+        if slave is not None:os.close(slave)
+        if master is not None:os.close(master)
+        CHILD=None
 
 def active(db,id,phase):
     return not STOP and db.execute('SELECT status FROM jobs WHERE id=?',(id,)).fetchone()[0]==phase
@@ -227,7 +259,7 @@ def process(db,r,lockfd):
             if d['engine']=='n':update(db,id,message='Advanced engine: retries preserve files, but restart may re-download segments')
     else:argv=engine_argv(d,work)
     diagnostic=[];caption_warning=''
-    try:code=run(db,id,argv,lockfd,diagnostic=diagnostic)
+    try:code=run(db,id,argv,lockfd,diagnostic=diagnostic,terminal=d['engine']=='n')
     except OSError:
         if not automatic or d['engine']!='n':raise
         d['engine']='yt-dlp';code=run(db,id,engine_argv(d,work),lockfd,diagnostic=diagnostic)
