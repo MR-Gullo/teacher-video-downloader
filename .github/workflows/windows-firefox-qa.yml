@@ -44,6 +44,12 @@ jobs:
           geckodriver --version
           python -m pip install --disable-pip-version-check selenium==4.51.0
           if ($LASTEXITCODE -ne 0) { throw 'Selenium installation failed' }
+      - name: Verify queue and worker regressions on Windows
+        run: |
+          python -B -m unittest discover -s tests -p test_core.py
+          if ($LASTEXITCODE -ne 0) { throw 'Queue regression checks failed' }
+          python -B -m unittest discover -s tests -p test_worker.py
+          if ($LASTEXITCODE -ne 0) { throw 'Worker regression checks failed' }
       - name: Fetch and verify pinned offline dependencies
         run: |
           python scripts/macos/fetch_dependencies.py --cache "$env:QA_ROOT/upstream" --package python-windows-x64 --package python-licenses-windows-x64 --package n-windows-x64 --package ytdlp-windows-x64 --package ffmpeg-windows-x64 --package deno-windows-x64 --package deno-source --package n-license --package ytdlp-license --package ytdlp-third-party
