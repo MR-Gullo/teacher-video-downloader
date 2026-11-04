@@ -36,4 +36,4 @@ jobs:
               if stream.read(1): raise SystemExit('Unexpected trailing source data')
           PY
       - name: Publish verified parts alongside the binary release
-        run: gh release upload v0.3.1 .scratch/source-offer/ffmpeg-source-cache.zip.part* --repo MR-Gullo/teacher-video-downloader
+        run: gh release upload v0.3.1 .scratch/source-offer/ffmpeg-source-cache.zip.part01 .scratch/source-offer/ffmpeg-source-cache.zip.part02 --repo MR-Gullo/teacher-video-downloader
