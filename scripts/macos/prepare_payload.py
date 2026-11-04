@@ -33,6 +33,19 @@ def extract(path, destination):
             archive.extractall(destination, filter='data')
 
 
+def copy_deno_notices(source, destination):
+    """Fail closed when the reviewed notice inventory is incomplete or changed."""
+    review = json.loads((source / 'PROVENANCE.json').read_text())
+    required = {'LICENSE-FILES.zip', 'MPL-SOURCES.zip', 'PACKAGE-LICENSES.json', 'THIRD-PARTY-NOTICES.txt'}
+    if review.get('denoVersion') != '2.9.8' or review.get('runtimeNoticeCoverageReviewed') is not True or set(review.get('files', {})) != required:
+        raise ValueError('Deno notice review is incomplete')
+    for name, digest in review['files'].items():
+        if not (source / name).is_file() or sha(source / name) != digest:
+            raise ValueError('Deno notice hash mismatch: ' + name)
+    shutil.copytree(source, destination)
+    return sha(source / 'PROVENANCE.json')
+
+
 def assemble(target, version, firefox_id, cache, output, ffmpeg_build=None, windows_launcher=None):
     if output.exists():
         raise ValueError('Refusing to replace an existing payload')
@@ -75,6 +88,7 @@ def assemble(target, version, firefox_id, cache, output, ffmpeg_build=None, wind
         notices = payload / 'licenses'; notices.mkdir()
         deno_notices = notices / 'deno'; deno_notices.mkdir()
         shutil.copytree(Path(__file__).with_name('licenses') / 'deno-v8', deno_notices / 'v8')
+        deno_review_sha = copy_deno_notices(Path(__file__).with_name('licenses') / 'deno-third-party', deno_notices / 'third-party')
         sources = payload / 'sources'; sources.mkdir()
         shutil.copyfile(cache / lock['deno-source']['filename'], sources / lock['deno-source']['filename'])
         with tarfile.open(cache / lock['deno-source']['filename']) as archive:
@@ -83,7 +97,7 @@ def assemble(target, version, firefox_id, cache, output, ffmpeg_build=None, wind
                                  ('deno/cli/tsc/dts/node/undici/LICENSE', 'UNDICI.txt'),
                                  ('deno/ext/webgpu/LICENSE.md', 'WEBGPU.txt')]:
                 (deno_notices / name).write_bytes(archive.extractfile(source).read())
-        (deno_notices / 'README.txt').write_text('Official Deno 2.9.8 release and included license texts. The complete upstream release source and Cargo.lock are retained in sources/deno-2.9.8-source.tar.gz. Transitive third-party notice coverage requires parent release review; these files are not a legal approval.\n')
+        (deno_notices / 'README.txt').write_text('Official Deno 2.9.8 release and included license texts. The upstream release source and Cargo.lock are retained in sources/deno-2.9.8-source.tar.gz. See third-party/ for the combined target inventory, original license files, MPL dependency sources and hash-bound provenance.\n')
         licensing = work / 'python-notices'; licensing.mkdir()
         licensing_archive = cache / lock['python-licenses-' + target]['filename']
         # Current macOS and Windows runner bsdtar can read zstd without a Python add-on.
@@ -105,6 +119,14 @@ def assemble(target, version, firefox_id, cache, output, ffmpeg_build=None, wind
             for name in ('ffmpeg.exe', 'ffprobe.exe'):
                 shutil.copyfile(next(ff.rglob(name)), tools / name)
             shutil.copyfile(next(ff.rglob('LICENSE.txt')), notices / 'FFmpeg-GPL.txt')
+            offer_path = Path(__file__).with_name('licenses') / 'WINDOWS-FFMPEG-SOURCE-OFFER.json'
+            offer = json.loads(offer_path.read_text())
+            if offer.get('inputHashesVerified') is not True or offer.get('binaryArchiveSHA256') != lock['ffmpeg-windows-x64']['sha256']:
+                raise ValueError('Windows FFmpeg source offer does not match the binary')
+            for name in ('ffmpeg.exe', 'ffprobe.exe'):
+                if sha(tools / name) != offer['binaryExecutablesSHA256'][name]:
+                    raise ValueError('Windows FFmpeg executable does not match the source offer')
+            shutil.copyfile(offer_path, sources / offer_path.name)
         else:
             if ffmpeg_build is None:
                 raise ValueError('Mac requires an explicit architecture-matched source build')
@@ -127,11 +149,13 @@ def assemble(target, version, firefox_id, cache, output, ffmpeg_build=None, wind
         else:
             shutil.copyfile(Path(__file__).with_name('run_host.py'), installer / 'run_host.py')
             for path in tools.iterdir(): path.chmod(0o755)
-        (payload / 'LICENSES.txt').write_text('LessonShelf bundles CPython from Astral Python Build Standalone, yt-dlp, FFmpeg/ffprobe, N_m3u8DL-RE and Deno.\nSee licenses/, the Python runtime LICENSE.txt, PROVENANCE.json and sources/.\nDeno transitive notices and Windows FFmpeg corresponding-source distribution require parent review before public release.\n')
+        (payload / 'LICENSES.txt').write_text('LessonShelf bundles CPython from Astral Python Build Standalone, yt-dlp, FFmpeg/ffprobe, N_m3u8DL-RE and Deno.\nSee licenses/, the Python runtime LICENSE.txt, PROVENANCE.json and sources/.\nWindows FFmpeg corresponding source must accompany the public release.\n')
         provenance = {'toolSourceSHA256': {path.name: sha(path) for path in tools.iterdir() if path.is_file()}, 'generatedAt': datetime.now(timezone.utc).isoformat(), 'target': target, 'dependencies': {key: lock[key] for key in keys},
                       'sourceProject': ROOT.name, 'sourceCommit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
                       'sourceDirty': subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT, text=True).splitlines(),
-                      'productionReleaseApproved': False, 'denoThirdPartyNoticesReviewed': False, 'windowsCorrespondingSourceReviewed': False if windows else None}
+                      'productionReleaseApproved': False, 'denoThirdPartyNoticesReviewed': True, 'denoNoticesProvenanceSHA256': deno_review_sha,
+                      'windowsCorrespondingSourceReviewed': True if windows else None,
+                      'windowsSourcePublicationRequired': True if windows else None}
         (payload / 'PROVENANCE.json').write_text(json.dumps(provenance, indent=2) + '\n')
         manifest = {'schema': 2, 'target': target, 'version': version, 'prototype': False, 'firefoxID': firefox_id,
                     'files': {path.relative_to(payload).as_posix(): sha(path) for path in sorted(payload.rglob('*')) if path.is_file()}}

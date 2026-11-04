@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "binaryArchiveSHA256": "91adc75f861c9b1252fe0911fae527763693fa0ffc0ed247cbc9b2be8118b1ce",
+  "binaryExecutablesSHA256": {
+    "ffmpeg.exe": "b5e3f8d7a6950d2265e3a4fe22c14372f723e9b9096a9ce4dea38224b45cbb33",
+    "ffprobe.exe": "9eb6362db4496d18dec568959355d8eeb0384fe2551a9b3db1a49619200782dd"
+  },
+  "sourceManifestSHA256": "4dd831bb6c502ce4db885a81c8f281cc3583d32d573d7b2b516af39682362ef5",
+  "sourceAssets": [
+    {
+      "filename": "ffmpeg-source-cache.zip.part01",
+      "sha256": "8e1fc6f1d960fc0c1569f7733c974ee54094b697716cbe8511bbd63a7d4ce7c5",
+      "bytes": 1073741824
+    },
+    {
+      "filename": "ffmpeg-source-cache.zip.part02",
+      "sha256": "34b320ed1a1d6c6a793ad2ce3a21825eac1455e95ef26bb3fc88931e2775778b",
+      "bytes": 1073741824
+    },
+    {
+      "filename": "ffmpeg-source-cache.zip.part03",
+      "sha256": "d7a7a94ec16a2147a60960296564bd1d2ffa5940a989fea6958460ae07b3c16e",
+      "bytes": 93708011
+    },
+    {
+      "filename": "ffmpeg-windows-recipes-58084b7.tar.gz",
+      "url": "https://github.com/yt-dlp/FFmpeg-Builds/archive/58084b7cf4984303a34b610ba3ad8f04059d5d89.tar.gz",
+      "commit": "58084b7cf4984303a34b610ba3ad8f04059d5d89",
+      "sha256": "875d7364c09411aba18a221c5c3ea16ebb21d7dc1a877a7479297332321d54e2",
+      "bytes": 118533
+    },
+    {
+      "filename": "ffmpeg-windows-source-f80a436.tar.gz",
+      "url": "https://github.com/FFmpeg/FFmpeg/archive/f80a436ffd922aebb6d64824b301884da2cc1ee4.tar.gz",
+      "commit": "f80a436ffd922aebb6d64824b301884da2cc1ee4",
+      "sha256": "8e59a733200eb5ccbb78d91d4d347eb5bbdc71138b094bcaea27f837bead00fa",
+      "bytes": 18101295
+    }
+  ],
+  "releaseURL": "https://github.com/MR-Gullo/teacher-video-downloader/releases/tag/v0.3.1",
+  "publicationRequired": true,
+  "inputHashesVerified": true,
+  "sourceArchiveCount": 129
+}
