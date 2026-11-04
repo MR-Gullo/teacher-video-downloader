@@ -8,7 +8,7 @@
   "tests": [
     {
       "id": "MAC-01",
-      "environment": "Live Zen / YouTube Jev",
+      "environment": "Live Zen / YouTube Jev / e455372",
       "scenario": "Open extension on public video",
       "preconditions": "See environment and source commit",
       "actions": "Open extension on public video",
@@ -19,11 +19,11 @@
       "date": "2026-11-04",
       "os": "macOS 27.2",
       "browser": "Zen 1.24b",
-      "source_commit": null
+      "source_commit": "e455372"
     },
     {
       "id": "MAC-02",
-      "environment": "Live Zen / YouTube Jev",
+      "environment": "Live Zen / YouTube Jev / e455372",
       "scenario": "Enable clip and enter start time",
       "preconditions": "See environment and source commit",
       "actions": "Enable clip and enter start time",
@@ -34,7 +34,7 @@
       "date": "2026-11-04",
       "os": "macOS 27.2",
       "browser": "Zen 1.24b",
-      "source_commit": null
+      "source_commit": "e455372"
     },
     {
       "id": "MAC-03",
@@ -173,63 +173,63 @@
     },
     {
       "id": "SITE-04",
-      "environment": "Mac Zen / YouTube: Jev / e455372",
-      "scenario": "Current live provider download",
+      "environment": "Mac Zen / signed 0.3.1 + installed a6664f7",
+      "scenario": "YouTube Jev full video",
       "preconditions": "See environment and source commit",
-      "actions": "Current live provider download",
-      "expected": "Explicitly blocked or untested; see scenario",
-      "actual": "Page discovery only; no current download in this session",
-      "status": "NOTTESTED",
-      "screenshot_id": "consent-help.png",
+      "actions": "YouTube Jev full video",
+      "expected": "The described action succeeds and reports its result",
+      "actual": "720p full video saved; 1280x720 H264/AAC full decode; no adjacent JSON",
+      "status": "PASS",
+      "screenshot_id": null,
       "date": "2026-11-04",
       "os": "macOS 27.2",
       "browser": "Zen 1.24b",
-      "source_commit": "e455372"
+      "source_commit": "a6664f7"
     },
     {
       "id": "SITE-05",
-      "environment": "YouTube: why is claude like this",
-      "scenario": "Current live provider download",
+      "environment": "Mac Zen / signed 0.3.1 + installed a6664f7",
+      "scenario": "YouTube Shorts: why is claude like this",
       "preconditions": "See environment and source commit",
-      "actions": "Current live provider download",
-      "expected": "Explicitly blocked or untested; see scenario",
-      "actual": "Not attempted in this session",
-      "status": "NOTTESTED",
+      "actions": "YouTube Shorts: why is claude like this",
+      "expected": "The described action succeeds and reports its result",
+      "actual": "Saved 720x1280 H264/AAC, full decode; captions unavailable due to rate limit",
+      "status": "PASS",
       "screenshot_id": null,
-      "date": "2026-11-04",
-      "os": "See environment",
-      "browser": "See environment",
-      "source_commit": null
-    },
-    {
-      "id": "SITE-06",
-      "environment": "Mac Zen / X public post / e455372",
-      "scenario": "Current live provider download",
-      "preconditions": "See environment and source commit",
-      "actions": "Current live provider download",
-      "expected": "Explicitly blocked or untested; see scenario",
-      "actual": "Detected embedded video and 1:42 duration; download not attempted",
-      "status": "NOTTESTED",
-      "screenshot_id": "mac-x-discovery-e455372.png",
       "date": "2026-11-04",
       "os": "macOS 27.2",
       "browser": "Zen 1.24b",
-      "source_commit": "e455372"
+      "source_commit": "a6664f7"
+    },
+    {
+      "id": "SITE-06",
+      "environment": "Mac Zen / signed 0.3.1 + installed a6664f7",
+      "scenario": "X public post download",
+      "preconditions": "See environment and source commit",
+      "actions": "X public post download",
+      "expected": "The described action succeeds and reports its result",
+      "actual": "Failed: downloaded media had no audio; original retained in local job folder. Source audio expectation unverified",
+      "status": "FAIL",
+      "screenshot_id": null,
+      "date": "2026-11-04",
+      "os": "macOS 27.2",
+      "browser": "Zen 1.24b",
+      "source_commit": "a6664f7"
     },
     {
       "id": "SITE-07",
-      "environment": "Instagram public reel",
-      "scenario": "Current live provider download",
+      "environment": "Mac Zen / signed 0.3.1 + installed a6664f7",
+      "scenario": "Instagram reel download",
       "preconditions": "See environment and source commit",
-      "actions": "Current live provider download",
-      "expected": "Explicitly blocked or untested; see scenario",
-      "actual": "Not attempted in this session",
-      "status": "NOTTESTED",
+      "actions": "Instagram reel download",
+      "expected": "The described action succeeds and reports its result",
+      "actual": "8.37-second H264/AAC file saved and fully decoded; captions missing. Page had multiple reels, so intended identity not independently verified",
+      "status": "PASS",
       "screenshot_id": null,
       "date": "2026-11-04",
-      "os": "See environment",
-      "browser": "See environment",
-      "source_commit": null
+      "os": "macOS 27.2",
+      "browser": "Zen 1.24b",
+      "source_commit": "a6664f7"
     },
     {
       "id": "SITE-08",
@@ -275,6 +275,81 @@
       "os": "Windows x64",
       "browser": "Firefox",
       "source_commit": "ad5d28e"
+    },
+    {
+      "id": "WIN-05",
+      "environment": "Windows x64 Firefox signed 0.3.1 / 406c096 / run 41810534004",
+      "scenario": "Signed add-on local fixture",
+      "preconditions": "See environment and source commit",
+      "actions": "Signed add-on local fixture",
+      "expected": "The described action succeeds and reports its result",
+      "actual": "Normal signed install, default 720p, progress, reopen, browser-close and worker-crash isolation passed; H264/AAC 1280x720",
+      "status": "PASS",
+      "screenshot_id": "firefox-reopened-queue-signed-406c096.png",
+      "date": "2026-11-04",
+      "os": "Windows x64",
+      "browser": "Firefox",
+      "source_commit": "406c096"
+    },
+    {
+      "id": "WIN-06",
+      "environment": "Windows x64 / 406c096 / run 41810534004",
+      "scenario": "N captured pipe diagnostic",
+      "preconditions": "See environment and source commit",
+      "actions": "N captured pipe diagnostic",
+      "expected": "The described action succeeds and reports its result",
+      "actual": "Clear local HLS: N exit 0, H264/AAC output fully decoded; fixture test",
+      "status": "PASS",
+      "screenshot_id": null,
+      "date": "2026-11-04",
+      "os": "Windows x64",
+      "browser": "Firefox",
+      "source_commit": "406c096"
+    },
+    {
+      "id": "MAC-13",
+      "environment": "Mac Zen / signed 0.3.1 + installed a6664f7",
+      "scenario": "Popup defaults and tools",
+      "preconditions": "See environment and source commit",
+      "actions": "Popup defaults and tools",
+      "expected": "The described action succeeds and reports its result",
+      "actual": "720p and standard MP4 defaults; 480p selectable; five tools displayed; progress and reopened queue observed",
+      "status": "PASS",
+      "screenshot_id": null,
+      "date": "2026-11-04",
+      "os": "macOS 27.2",
+      "browser": "Zen 1.24b",
+      "source_commit": "a6664f7"
+    },
+    {
+      "id": "MAC-15",
+      "environment": "Mac Zen / signed 0.3.1 + installed a6664f7",
+      "scenario": "Multiple-player selection",
+      "preconditions": "See environment and source commit",
+      "actions": "Multiple-player selection",
+      "expected": "The described action succeeds and reports its result",
+      "actual": "Popup offered two Shorts players; first selected and a file saved; independent target identity not established",
+      "status": "PASS",
+      "screenshot_id": null,
+      "date": "2026-11-04",
+      "os": "macOS 27.2",
+      "browser": "Zen 1.24b",
+      "source_commit": "a6664f7"
+    },
+    {
+      "id": "MAC-14",
+      "environment": "Mac Zen / signed 0.3.1 + installed a6664f7",
+      "scenario": "Jev queued clip draft",
+      "preconditions": "See environment and source commit",
+      "actions": "Jev queued clip draft",
+      "expected": "The described action succeeds and reports its result",
+      "actual": "Queued 0:05\u20130:15 remained unchanged after draft edited to 0:08; clip job failed after 3 attempts, cause unavailable",
+      "status": "FAIL",
+      "screenshot_id": null,
+      "date": "2026-11-04",
+      "os": "macOS 27.2",
+      "browser": "Zen 1.24b",
+      "source_commit": "a6664f7"
     },
     {
       "id": "MAC-06",
@@ -339,9 +414,9 @@
     {
       "id": "OPEN-03",
       "environment": "Mac preview",
-      "scenario": "Multi-player and invalid clip ranges",
+      "scenario": "Invalid clip ranges",
       "preconditions": "See environment and source commit",
-      "actions": "Multi-player and invalid clip ranges",
+      "actions": "Invalid clip ranges",
       "expected": "Explicitly blocked or untested; see scenario",
       "actual": "Not exercised live",
       "status": "NOTTESTED",
@@ -518,36 +593,21 @@
     },
     {
       "id": "OPEN-04",
-      "environment": "Updated popup 80be2e8",
+      "environment": "Mac Zen / signed 0.3.1 + installed a6664f7",
       "scenario": "480p and Deno popup readback",
       "preconditions": "See environment and source commit",
       "actions": "480p and Deno popup readback",
-      "expected": "Explicitly blocked or untested; see scenario",
-      "actual": "Updated popup not yet loaded in Zen",
-      "status": "NOTTESTED",
+      "expected": "The described action succeeds and reports its result",
+      "actual": "480p selectable and Deno available in native popup; downloaded 480p was separately tested on 781e325",
+      "status": "PASS",
       "screenshot_id": null,
       "date": "2026-11-04",
-      "os": "See environment",
-      "browser": "See environment",
-      "source_commit": "80be2e8"
+      "os": "macOS 27.2",
+      "browser": "Zen 1.24b",
+      "source_commit": "a6664f7"
     },
     {
       "id": "PENDING-01",
-      "environment": "Not yet exercised live",
-      "scenario": "Multiple-player choice",
-      "preconditions": "See environment and source commit",
-      "actions": "Multiple-player choice",
-      "expected": "Explicitly blocked or untested; see scenario",
-      "actual": "Current Mac run did not exercise multiple players",
-      "status": "NOTTESTED",
-      "screenshot_id": null,
-      "date": "2026-11-04",
-      "os": "See environment",
-      "browser": "See environment",
-      "source_commit": null
-    },
-    {
-      "id": "PENDING-02",
       "environment": "Not yet exercised live",
       "scenario": "Clip physical handles",
       "preconditions": "See environment and source commit",
@@ -562,7 +622,7 @@
       "source_commit": null
     },
     {
-      "id": "PENDING-03",
+      "id": "PENDING-02",
       "environment": "Not yet exercised live",
       "scenario": "Clip crossed or ended ranges",
       "preconditions": "See environment and source commit",
@@ -577,11 +637,11 @@
       "source_commit": null
     },
     {
-      "id": "PENDING-04",
+      "id": "PENDING-03",
       "environment": "Not yet exercised live",
-      "scenario": "Clip navigation and immutable running job",
+      "scenario": "Clip navigation",
       "preconditions": "See environment and source commit",
-      "actions": "Clip navigation and immutable running job",
+      "actions": "Clip navigation",
       "expected": "Explicitly blocked or untested; see scenario",
       "actual": "Automated regression passes; current live retest pending",
       "status": "NOTTESTED",
@@ -592,7 +652,7 @@
       "source_commit": null
     },
     {
-      "id": "PENDING-05",
+      "id": "PENDING-04",
       "environment": "Not yet exercised live",
       "scenario": "Same-range dedup and second Download",
       "preconditions": "See environment and source commit",
@@ -607,13 +667,13 @@
       "source_commit": null
     },
     {
-      "id": "PENDING-06",
+      "id": "PENDING-05",
       "environment": "Not yet exercised live",
       "scenario": "English captions available",
       "preconditions": "See environment and source commit",
       "actions": "English captions available",
       "expected": "Explicitly blocked or untested; see scenario",
-      "actual": "Only missing-caption warning observed on local fixture",
+      "actual": "Jev full download included captions; broader provider coverage remains incomplete",
       "status": "NOTTESTED",
       "screenshot_id": null,
       "date": "2026-11-04",
@@ -622,7 +682,7 @@
       "source_commit": null
     },
     {
-      "id": "PENDING-07",
+      "id": "PENDING-06",
       "environment": "Not yet exercised live",
       "scenario": "Private browsing",
       "preconditions": "See environment and source commit",
@@ -637,7 +697,7 @@
       "source_commit": null
     },
     {
-      "id": "PENDING-08",
+      "id": "PENDING-07",
       "environment": "Not yet exercised live",
       "scenario": "Separate copy controls",
       "preconditions": "See environment and source commit",
@@ -652,7 +712,7 @@
       "source_commit": null
     },
     {
-      "id": "PENDING-09",
+      "id": "PENDING-08",
       "environment": "Not yet exercised live",
       "scenario": "Reveal output in Finder",
       "preconditions": "See environment and source commit",
@@ -667,7 +727,7 @@
       "source_commit": null
     },
     {
-      "id": "PENDING-10",
+      "id": "PENDING-09",
       "environment": "Not yet exercised live",
       "scenario": "Missing companion",
       "preconditions": "See environment and source commit",
@@ -682,13 +742,13 @@
       "source_commit": null
     },
     {
-      "id": "PENDING-11",
+      "id": "PENDING-10",
       "environment": "Not yet exercised live",
-      "scenario": "Other YouTube and Instagram downloads",
+      "scenario": "Additional provider cases",
       "preconditions": "See environment and source commit",
-      "actions": "Other YouTube and Instagram downloads",
+      "actions": "Additional provider cases",
       "expected": "Explicitly blocked or untested; see scenario",
-      "actual": "Not attempted this session",
+      "actual": "Coverage is limited to cases listed in website matrix",
       "status": "NOTTESTED",
       "screenshot_id": null,
       "date": "2026-11-04",
@@ -697,13 +757,13 @@
       "source_commit": null
     },
     {
-      "id": "PENDING-12",
+      "id": "PENDING-11",
       "environment": "Not yet exercised live",
-      "scenario": "480p popup and tool-check Deno label",
+      "scenario": "480p end-to-end on signed 0.3.1",
       "preconditions": "See environment and source commit",
-      "actions": "480p popup and tool-check Deno label",
+      "actions": "480p end-to-end on signed 0.3.1",
       "expected": "Explicitly blocked or untested; see scenario",
-      "actual": "Native installed 480p and Deno pass; updated popup not loaded",
+      "actual": "Option selectable; downloaded 480p was tested separately on installed 781e325",
       "status": "NOTTESTED",
       "screenshot_id": null,
       "date": "2026-11-04",
@@ -735,7 +795,7 @@
     }
   ],
   "remaining_blockers": [
-    "Updated popup native verification pending",
+    "Jev clip failed with unrecorded cause; X returned no-audio failure",
     "Provider coverage incomplete; installed a6664f7 N passed isolated local HLS, but live integrated UI coverage remains incomplete",
     "Guide is a local QA record; release approval and live provider coverage remain open"
   ],
@@ -744,6 +804,20 @@
     "Inspect truncated video format label at narrow popup widths",
     "Evaluate whether consent and download should be separable for first-time diagnosis"
   ],
+  "current_install": {
+    "companion_commit": "a889ca6",
+    "status": "Installed after provider tests; queue database hash unchanged and rollback retained",
+    "provider_tests": "Provider outcomes recorded above used a6664f7; no provider retest on a889ca6"
+  },
+  "local_clip_check": {
+    "scope": "Saved Jev full video cut locally with FFmpeg; not a retry of the failed provider clip job",
+    "result": "10.000-second 0:05\u20130:15 H264/AAC clip fully decoded"
+  },
+  "diagnostic_change": {
+    "commit": "8802ddb",
+    "scope": "Source only; fixed safe failure categories, no raw URLs or stderr; not installed or released",
+    "tests": "Focused worker, core, and local clip integration tests passed"
+  },
   "installed_a6664f7_hls": {
     "candidate": "a6664f7",
     "environment": "installed Mac companion; isolated temporary state and localhost fixture",
