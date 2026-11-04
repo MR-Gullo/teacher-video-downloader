@@ -184,7 +184,9 @@ def ensure_worker():
     # Worker flock prevents duplicate workers; detached process survives browser exit.
     options={'creationflags':subprocess.CREATE_NEW_PROCESS_GROUP|subprocess.DETACHED_PROCESS|subprocess.CREATE_BREAKAWAY_FROM_JOB} if sys.platform=='win32' else {'start_new_session':True}
     try:
-        subprocess.Popen([sys.executable,str(APP/'worker.py')],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,close_fds=True,**options)
+        # Interpreter flags do not carry over to a new process. The bundled
+        # runtime is sealed, so the detached worker must not write bytecode.
+        subprocess.Popen([sys.executable,'-B',str(APP/'worker.py')],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,close_fds=True,**options)
     except PermissionError as error:
         if sys.platform=='win32':raise ValueError('Windows prevented the companion from starting a background worker. The job remains queued.') from error
         raise

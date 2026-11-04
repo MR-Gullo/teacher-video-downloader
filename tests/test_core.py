@@ -52,8 +52,24 @@ class Core(unittest.TestCase):
  def test_windows_worker_requests_permitted_job_breakaway(self):
   with patch.object(core.sys,'platform','win32'),patch.object(core.subprocess,'CREATE_NEW_PROCESS_GROUP',0x200,create=True),patch.object(core.subprocess,'DETACHED_PROCESS',0x8,create=True),patch.object(core.subprocess,'CREATE_BREAKAWAY_FROM_JOB',0x1000000,create=True),patch.object(core.subprocess,'Popen') as spawn:
    core.ensure_worker();self.assertEqual(spawn.call_args.kwargs['creationflags'],0x1000208)
+   self.assertEqual(spawn.call_args.args[0],[sys.executable,'-B',str(core.APP/'worker.py')])
    spawn.side_effect=PermissionError()
    with self.assertRaisesRegex(ValueError,'job remains queued'):core.ensure_worker()
+ def test_detached_worker_does_not_write_bytecode(self):
+  import subprocess,time
+  root=Path(self.tmp.name)/'program';root.mkdir()
+  (root/'dependency.py').write_text('value = 42\n')
+  (root/'worker.py').write_text("import dependency\nfrom pathlib import Path\nPath(__file__).with_name('finished').write_text(str(dependency.value))\n")
+  popen=subprocess.Popen;children=[]
+  def launch(*args,**kwargs):
+   child=popen(*args,**kwargs);children.append(child);return child
+  with patch.object(core,'APP',root),patch.dict(os.environ,{'PYTHONDONTWRITEBYTECODE':''}),patch.object(core.subprocess,'Popen',side_effect=launch):
+   core.ensure_worker()
+   deadline=time.monotonic()+10
+   while not (root/'finished').exists() and time.monotonic()<deadline:time.sleep(.05)
+   self.assertEqual(children[0].wait(timeout=10),0)
+  self.assertEqual((root/'finished').read_text(),'42')
+  self.assertFalse((root/'__pycache__').exists())
  def test_worker_starts_only_for_queued_work(self):
   with patch.object(core,'ensure_worker') as spawn,patch.object(core,'doctor',return_value={}):
    core.handle({'op':'doctor'});core.handle({'op':'status'});spawn.assert_not_called()
