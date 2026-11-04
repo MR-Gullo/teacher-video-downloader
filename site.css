@@ -4,3 +4,4 @@
 .demo{padding:70px 32px;max-width:900px}.demo h1{font-size:clamp(42px,6vw,64px)}.demo p{max-width:70ch}.demo video{display:block;max-width:100%;height:auto;background:#252422;border-radius:10px;margin:28px 0}
 
 [hidden]{display:none!important}.steps ol{padding-top:20px}
+button:disabled{cursor:default;opacity:.65}.install-step{margin-top:30px}.steps p{max-width:65ch}.steps .button{margin-bottom:12px}

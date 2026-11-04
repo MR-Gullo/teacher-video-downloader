@@ -1,0 +1,41 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const html = fs.readFileSync('index.html', 'utf8');
+const script = fs.readFileSync('site.js', 'utf8');
+async function page(userAgent, release, savedTheme = null) {
+  const elements = Object.fromEntries([...html.matchAll(/id="([^"]+)"/g)].map(([, id]) => [id, {hidden: false, dataset: {}, handlers: {}, setAttribute(k, v) { this[k] = v; }, addEventListener(k, f) { this.handlers[k] = f; }}]));
+  for (const id of ['firefox-install', 'windows-companion', 'windows-signature-note']) elements[id].hidden = true;
+  const buttons = ['firefox', 'chrome'].map(browser => ({dataset: {browser}, setAttribute(k, v) { this[k] = v; }, addEventListener() {}}));
+  const tabs = {hidden: false};
+  const document = {documentElement: {dataset: {}}, querySelectorAll: () => buttons, querySelector(selector) { if (selector === '.browser-tabs') return tabs; assert(elements[selector.slice(1)], 'Unknown HTML element ' + selector); return elements[selector.slice(1)]; }};
+  vm.runInNewContext(script, {document, navigator: {userAgent, platform: '', maxTouchPoints: 0}, localStorage: {getItem: () => savedTheme, setItem() {}}, URL, fetch: async () => ({ok: true, json: async () => release})});
+  await new Promise(setImmediate);
+  return {elements, document};
+}
+(async () => {
+  const pending = {version: '0.3.1', firefoxXpi: null, windowsInstaller: null};
+  let p = await page('Mozilla Windows NT 10.0 Win64 x64 Firefox', pending);
+  assert(p.elements['firefox-install'].hidden && p.elements['windows-companion'].hidden);
+  assert.equal(p.document.documentElement.dataset.theme, 'light');
+  assert.match(p.elements['release-state'].textContent, /being prepared/);
+  const ready = {version: '0.3.1', firefoxXpi: 'https://addons.mozilla.org/firefox/downloads/file/123/test.xpi', windowsInstaller: 'https://github.com/MR-Gullo/teacher-video-downloader/releases/download/v0.3.1/test.exe', windowsSigned: false};
+  p = await page('Windows Win64 x64 Firefox', ready, 'dark');
+  assert(!p.elements['firefox-install'].hidden && !p.elements['windows-companion'].hidden);
+  assert.equal(p.document.documentElement.dataset.theme, 'dark');
+  assert(!p.elements['windows-signature-note'].hidden);
+  p = await page('Windows Win64 ARM64 Firefox', ready);
+  assert(p.elements['windows-install'].hidden);
+  assert.match(p.elements['platform-note'].textContent, /ARM64 is not supported/);
+  p = await page('Macintosh Mac OS X Firefox', pending);
+  assert(p.elements['windows-install'].hidden && !p.elements['mac-install'].hidden);
+  p = await page('iPhone Mobile', ready);
+  assert(p.elements['firefox-steps'].hidden && p.elements['chrome-steps'].hidden);
+  assert(p.elements['platform-note'].hidden && p.elements['release-state'].hidden);
+  p = await page('Windows Chrome', ready);
+  assert(p.elements['firefox-steps'].hidden && !p.elements['chrome-steps'].hidden);
+  p = await page('Windows Firefox', {...ready, firefoxXpi: 'http://untrusted.invalid/test.xpi'});
+  assert(p.elements['firefox-install'].hidden);
+  assert.match(p.elements['release-state'].textContent, /could not be loaded/);
+  console.log('PASS release availability, browser, platform and theme states');
+})().catch(error => {console.error(error); process.exitCode = 1;});

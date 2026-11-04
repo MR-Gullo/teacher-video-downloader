@@ -1,57 +1,58 @@
-# LessonShelf · Local Video
+# LessonShelf
 
-**Local 0.3.0 Firefox/Zen preview.** The redesigned extension can save supported direct media files through the browser. The Mac companion adds a local queue. This 0.3.0 preview is temporary and unsigned; the separate 0.2.1 release was signed for self-distribution. Chrome release work is paused, and Windows has not been verified.
+LessonShelf saves permitted classroom videos and YouTube clips. It defaults to a compatible MP4 with H.264 video and AAC audio at up to 720p. Firefox and Zen use a companion that includes the download tools on Windows x64 and Mac.
 
-## Start here
+## Install
 
-Build the local preview with `python3 scripts/build.py`. Load `build/firefox/manifest.json` as a temporary add-on in Firefox or Zen. Temporary add-ons must be reloaded after a browser restart. Published downloads and documentation may still describe an older version.
+Use the [LessonShelf installation page](https://mr-gullo.github.io/teacher-video-downloader/#setup). It shows only available release downloads. Install the Firefox extension, then the companion for your computer. Return to LessonShelf and choose **Check connection**.
 
-Open LessonShelf on a video page and choose **Download video**. On Mac, the normal shortcut is Option+Shift+V. The separately installed temporary preview may use a different shortcut. Paste a direct MP4, WebM, MP3, M4A or WAV link to use **Download original in browser**. Browser downloads use the browser’s download folder and may send normal site cookies. Sites can refuse access, and protected media is unsupported.
+The next tester release is being prepared. The Windows companion has passed real Windows Firefox fixture tests. It is not yet code-signed. The normal Mac installer still needs Developer ID signing and notarization. Chrome, Windows ARM64 and mobile browsers are outside this beta. Source archives and temporary add-ons are for development, not teacher installation.
 
-On Mac, the optional local companion provides page extraction, queue recovery, and conversion. Follow [Mac setup](docs/MAC-SETUP.md) and the [acceptance checklist](docs/MAC-ACCEPTANCE.md). See [test evidence](docs/TEST-REPORT.md). The companion and its tools are not available on Windows in this preview.
+## Download a video
 
-### Teacher defaults
+1. Open the video and start playback.
+2. Open LessonShelf and choose **Download video**.
+3. When it says Saved, choose **Show in folder** on Windows or **Show in Finder** on Mac.
 
-- Companion output defaults to `~/Downloads/youtube-downloads`; optional course folder. `YTDL_OUTPUT_DIR` can override the location.
-- Default to video and audio at up to 720p, measured on the shorter side so portrait and landscape videos use the same limit. Retain the downloaded file without an additional encode. An optional projector or storage copy can be selected in Download settings. A companion video with an unknown dimension or a shorter side above the selected limit is retained privately but not published as a completed result.
-- English captions and chapters are requested when available. Missing captions are reported. An optional AV1 copy is for storage and may take longer.
-- The original and partial files are retained. No automatic cleanup deletes recovery data.
+If a page has more than one video, choose the intended player. **Paste link** accepts one HTTP or HTTPS video link. Direct MP4, WebM and audio files can use the browser download path without the companion. Browser downloads keep the source quality and use the browser's destination folder.
 
-### Direct file downloads
+## Download a YouTube clip
 
-Choose **Paste link**, enter a direct MP4, WebM, MP3, M4A or WAV link, and choose **Download original in browser**. The browser controls the download and destination; this path does not use the companion, conversion or durable queue. A link ending in one of these extensions does not guarantee the server will allow a download.
+On a supported YouTube watch page, open **Download settings** and enable **Download a clip**. In starts at the current playhead, rounded down to a second. Out starts at the end. Drag the two handles, use their arrow keys, or enter times. Choose Download.
 
-### Everyday flow
+Changing the range prepares the next clip. It does not change or stop a submitted job. Click Download for the new range to queue it behind the running job. The original range and progress stay visible. A repeated active range does not create a duplicate. Clips use standard MP4 video and omit captions and extra copies. Ads, live streams and unsupported player contexts cannot be clipped.
 
-Open the extension on the current lesson page and choose **Download video**. If several players are present, select the intended video. You can also use **Paste link** for one HTTP(S) link. The main popup shows progress and offers **Show in Finder** when a file is saved. Download settings and Help & setup are available below the main controls. Firefox asks for permission before sending page and candidate media links to the local companion.
+## Settings and output
 
-The companion identifies a matching clear HLS master when the page provides enough evidence. It uses a compatible local engine automatically and can fall back to yt-dlp on a startup or compatibility failure. It does not bypass access, geographic restrictions or protected media. A site can remain unsupported, and an expired signed link may need to be refreshed. An N download can restart segments even when its temporary files are retained. If an engine cannot report progress, the progress bar is indeterminate. Sources confirmed to have no audio are saved with a warning.
+- Fresh installs default to video and audio, up to 720p, English captions if available, and no extra copy. Light mode is the default; dark mode is available.
+- Quality caps include 480p and 720p. The shorter side is capped, so portrait video uses its width. Low-resolution video is not enlarged.
+- Standard MP4 uses H.264/yuv420p and AAC for compatibility. Original preserves the source format. AV1 is an optional storage format and may not play on older classroom equipment. Audio-only saves M4A.
+- The companion chooses a compatible engine for each video. It includes yt-dlp, FFmpeg, FFprobe, N_m3u8DL-RE and Deno. Teachers do not install these separately.
+- Missing captions produce a warning. No cloud transcription runs automatically.
+- Companion downloads normally go to the user's Downloads/youtube-downloads folder. A course subfolder is optional. Source metadata stays in private job storage; new JSON sidecars are not published beside the video.
 
-Close the popup or browser: already-started jobs continue locally while the Mac is awake. Reopen to see the durable queue. Pause/cancel retains partial files; Resume/Retry uses the same private job directory. After worker/OS interruption, the next connection marks interrupted jobs paused; explicitly Resume. Sleep suspends execution; this is not a power-management tool.
+## Queue and recovery
 
-### Important boundaries
+Downloads shows running, queued and saved jobs. Closing the popup or browser does not stop an already-started companion job while the computer remains awake. Pause and Cancel retain partial files. Resume and Retry reuse the job's private directory; an engine can re-download segments. After a worker or operating-system interruption, interrupted jobs become paused and need Resume. Completed jobs are reused when the same video and settings are requested.
 
-- No DRM key extraction, decryption-key entry, access/geographic restriction bypass, or browser-profile dumping.
-- **Authenticated-cookie export is not implemented in this preview.** The companion does not read or export cookies or authorization headers. Browser-managed downloads make normal site requests and may send the browser's site cookies. Public or already-authorized signed media URLs may work until expiry. N's domain-scoped cookie feature is not exposed here. Do not paste secrets into titles/logs.
-- **Spokenly is explicitly not configured.** Its actual interface and backend privacy were not supplied or verified; no invented flags and no automatic cloud fallback. Doctor states this clearly.
-- yt-dlp and FFmpeg must be installed separately. N_m3u8DL-RE is optional and is used only when its compatibility checks pass. The Knowledge Network preview used yt-dlp after N did not complete its metadata check; a successful N media download was not verified.
-- Original downloads, failed partials and queue history are intentionally retained. They consume disk. No automatic cleanup erases recovery data; see the setup guide for deliberate cleanup.
+Updates preserve the queue, partials, downloaded files and output location. They refuse active workers and unknown installations. The previous program and registration are retained for rollback.
 
-## Development / audit
+## Access and privacy
 
-Python3.11+ standard library; no Python runtime dependency to install for the companion itself.
+Download only videos you have permission to save. Sites can refuse access or limit requests. Protected media, DRM removal and sign-in or geographic bypass are not supported. The companion does not read browser profiles or export cookies or Authorization headers. Browser-managed downloads may send normal site cookies. Firefox asks permission before selected page and video links are sent to the companion on this computer. Private browsing is unavailable.
+
+## Verification and development
+
+[Windows Firefox acceptance](https://github.com/MR-Gullo/teacher-video-downloader/actions/workflows/windows-firefox-qa.yml) runs the real Windows installer, bundled tools, Firefox/native messaging, clip media, progress, recovery and worker isolation on a Windows runner. Local media fixtures establish those paths, not support for every provider. The visual feature guide and its evidence inventory record live provider results separately.
 
 ```sh
 python3 -m unittest discover -s tests -v
 node tests/ui-unit.cjs
+node tests/clip-ui.cjs
+node tests/clip-running.cjs
+node tests/background-consent.cjs
+node tests/progress-unit.cjs
 python3 scripts/build.py
-python3 companion/cli.py --doctor
-# Preview a non-destructive copy; prints argv, does not encode by default:
-python3 companion/cli.py --input /path/to/video.mkv --mode classroom
-# Explicitly create/validate a copy (will not overwrite an existing copy):
-python3 companion/cli.py --input /path/to/video.mkv --mode av1 --execute
-# No compression:
-python3 companion/cli.py --input /path/to/video.mkv --mode none
 ```
 
-See [test evidence](docs/TEST-REPORT.md), [architecture/security](docs/ARCHITECTURE.md), and [capability references](docs/ENGINE-NOTES.md).
+See [architecture](docs/ARCHITECTURE.md), [Windows packaging](docs/WINDOWS-INSTALLER.md), [Mac packaging](docs/MAC-INSTALLER.md), and [engine notes](docs/ENGINE-NOTES.md). Temporary add-ons are removed when Firefox or Zen closes. Published tester installation uses a Mozilla-signed XPI.

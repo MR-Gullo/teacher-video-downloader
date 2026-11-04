@@ -17,7 +17,7 @@ Run from the repository using the runner's Python and installed .NET Framework c
 ```powershell
 $task = Join-Path $PWD '.scratch/mac-installer-20261103'
 $cache = Join-Path $task 'upstream'
-python scripts/macos/fetch_dependencies.py --cache $cache --package python-windows-x64 --package python-licenses-windows-x64 --package n-windows-x64 --package ytdlp-windows-x64 --package ffmpeg-windows-x64 --package n-license --package ytdlp-license --package ytdlp-third-party
+python scripts/macos/fetch_dependencies.py --cache $cache --package python-windows-x64 --package python-licenses-windows-x64 --package n-windows-x64 --package deno-windows-x64 --package deno-source --package ytdlp-windows-x64 --package ffmpeg-windows-x64 --package n-license --package ytdlp-license --package ytdlp-third-party
 python scripts/windows/build_installer.py --output "$task/launch-host.exe"
 python scripts/macos/prepare_payload.py --target windows-x64 --version 0.3.1 --firefox-id teacher-video-downloader@local.invalid --cache $cache --windows-launcher "$task/launch-host.exe" --output "$task/payload-windows-x64"
 python scripts/windows/build_installer.py --payload "$task/payload-windows-x64" --output "$task/LessonShelf-0.3.1-windows-x64.exe"
@@ -44,7 +44,7 @@ After the staged EXE install, test the actual managed launcher before browser au
 python tests/windows_launcher_acceptance.py --app "$stage/AppData/Local/LessonShelf/app" --report "$task/reports/native-launcher.json"
 ```
 
-This Windows-only check keeps stdin open while it sends doctor and status frames. It requires replies before EOF, all four bundled tool paths, a real isolated queue database and a clean launcher exit. The C# launcher forwards binary stdin/stdout/stderr explicitly and flushes each chunk. A Python-host-only test cannot qualify this transport.
+This Windows-only check keeps stdin open while it sends doctor and status frames. It requires replies before EOF, all five bundled tool paths, a real isolated queue database and a clean launcher exit. The C# launcher forwards binary stdin/stdout/stderr explicitly and flushes each chunk. A Python-host-only test cannot qualify this transport.
 
 ## FFmpeg source distribution preparation
 
@@ -56,10 +56,10 @@ The staged package is `.scratch/mac-installer-20261103/source-distribution/ffmpe
 
 ## Release gates
 
-Real Windows CI has fetched the pinned inputs, compiled the native launcher and installer, assembled the full payload and executed a staged EXE install successfully. Full native-message/browser acceptance is still being repaired and must pass on the final source revision. The early transport check above tests the actual launch-host.exe. Mac staging and registry projection tests do not count as Windows evidence.
+Real Windows CI has fetched the pinned inputs, compiled the native launcher and installer, assembled the full payload and executed a staged EXE install successfully. Native-message/browser acceptance passed at e455372 in run 41775735474. The 480p and layout changes are being checked on the next source revision. The early transport check above tests the actual launch-host.exe. Mac staging and registry projection tests do not count as Windows evidence.
 
 The input lock pins CPython 3.13.18 from the official Astral Python Build Standalone release 20261026, yt-dlp 2026.10.26, N_m3u8DL-RE 0.6.0-beta and the yt-dlp project's versioned FFmpeg build. Upstream SHA-256 values are verified before assembly. FFmpeg's upstream project publishes source; this Windows binary is explicitly a downstream yt-dlp project build. The corresponding source package is prepared and hash checked as described above. Parent source-offer review and publication remain pending; no legal approval or published source offer is claimed.
 
-The candidate has no Authenticode signature or SmartScreen reputation evidence. Before colleague sharing, inventory the appropriate code-signing identity on the Windows signing host, sign the reviewed executable, verify its signature, and test an actual browser download under normal Windows security policy. Do not instruct teachers to bypass security warnings or change execution policy. Public artifact publication and the extension link remain parent-owned review steps. No local Windows install, registry edit, workflow write, publication or browser change occurred in this installer chat.
+The beta candidate has no Authenticode signature or SmartScreen reputation evidence. Its release page must label this explicitly. Windows or school policy may block installation; testers should contact the maintainer rather than disable security checks or change execution policy. A warning-free production installer needs a trusted code-signing identity and a normal browser-download check on Windows. Public artifact publication and the extension link remain parent-owned review steps. No local Windows install, registry edit, workflow write, publication or browser change occurred in this installer chat.
 
 The 0.3.1 payload also requires official Deno 2.9.8 for yt-dlp EJS. Add `--package deno-windows-x64 --package deno-source` to dependency fetching. The assembler copies `tools/deno.exe`, included notices and the pinned upstream source archive. PE validation covers Deno as well as every other executable. Native Windows acceptance must run the version and restricted offline JavaScript checks; Mac cross-compilation is not Windows execution evidence. Deno transitive notice coverage remains an explicit parent release gate; see [MAC-INSTALLER.md](MAC-INSTALLER.md#bundled-javascript-runtime-in-031).
