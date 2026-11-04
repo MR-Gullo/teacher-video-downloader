@@ -62,6 +62,11 @@ class Core(unittest.TestCase):
   (root/'worker.py').write_text("import dependency\nfrom pathlib import Path\nPath(__file__).with_name('finished').write_text(str(dependency.value))\n")
   popen=subprocess.Popen;children=[]
   def launch(*args,**kwargs):
+   self.assertEqual(args[0][1],'-B')
+   # This fixture checks bytecode, not detachment from the CI runner's job.
+   # Production breakaway flags are asserted separately above and exercised
+   # through the installed native launcher in Windows acceptance.
+   if sys.platform=='win32':kwargs.pop('creationflags',None)
    child=popen(*args,**kwargs);children.append(child);return child
   with patch.object(core,'APP',root),patch.dict(os.environ,{'PYTHONDONTWRITEBYTECODE':''}),patch.object(core.subprocess,'Popen',side_effect=launch):
    core.ensure_worker()
@@ -111,7 +116,7 @@ class Core(unittest.TestCase):
  def test_bundled_n_requires_pinned_binary_and_appropriate_flags(self):
   from types import SimpleNamespace
   root=Path(self.tmp.name);app=root/'app';tools=app/'tools';tools.mkdir(parents=True)
-  binary=tools/'N_m3u8DL-RE';binary.write_bytes(b'not-the-real-binary');binary.chmod(0o700)
+  binary=tools/('N_m3u8DL-RE.exe' if sys.platform=='win32' else 'N_m3u8DL-RE');binary.write_bytes(b'not-the-real-binary');binary.chmod(0o700)
   help_text=b'--disable-update-check --write-meta-json -sv -sa'
   with patch.object(core,'APP',app/'companion'),patch.object(core.Path,'home',return_value=root),patch.object(core.shutil,'which',return_value=None),patch.object(core.subprocess,'run',return_value=SimpleNamespace(returncode=0,stdout=help_text)):
    for digest in core.KNOWN_N_060:
