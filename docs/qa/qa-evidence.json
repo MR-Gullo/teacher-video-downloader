@@ -128,18 +128,18 @@
     },
     {
       "id": "SITE-01",
-      "environment": "Mac Zen / Knowledge Network: Mudflats Living / e455372",
+      "environment": "Mac Zen / Knowledge Network: Mudflats Living",
       "scenario": "Open public page",
       "preconditions": "See environment and source commit",
       "actions": "Open public page",
       "expected": "Explicitly blocked or untested; see scenario",
-      "actual": "CloudFront 403 Request blocked before playback; stopped provider retries",
+      "actual": "Earlier CloudFront 403; later page loaded but native player said available only in Canada; stopped at geo restriction",
       "status": "BLOCKED",
       "screenshot_id": "knowledge-403.png",
       "date": "2026-11-04",
       "os": "macOS 27.2",
       "browser": "Zen 1.24b",
-      "source_commit": "e455372"
+      "source_commit": null
     },
     {
       "id": "SITE-02",
@@ -203,18 +203,18 @@
     },
     {
       "id": "SITE-06",
-      "environment": "Mac Zen / signed 0.3.1 + installed a6664f7",
+      "environment": "Mac Zen / signed 0.3.1 + installed a889ca6",
       "scenario": "X public post download",
       "preconditions": "See environment and source commit",
       "actions": "X public post download",
       "expected": "The described action succeeds and reports its result",
-      "actual": "Failed: downloaded media had no audio; original retained in local job folder. Source audio expectation unverified",
-      "status": "FAIL",
+      "actual": "Earlier job failed when silence was inconclusive; signed popup retest on a889ca6 saved a verified silent 101.923-second H264 MP4 with warning and full decode",
+      "status": "PASS",
       "screenshot_id": null,
       "date": "2026-11-04",
       "os": "macOS 27.2",
       "browser": "Zen 1.24b",
-      "source_commit": "a6664f7"
+      "source_commit": "a889ca6"
     },
     {
       "id": "SITE-07",
@@ -334,6 +334,36 @@
       "date": "2026-11-04",
       "os": "Windows x64",
       "browser": "Firefox",
+      "source_commit": "a889ca6"
+    },
+    {
+      "id": "MAC-16",
+      "environment": "Mac Zen / signed 0.3.1 + installed a889ca6",
+      "scenario": "Jev clip signed popup retest",
+      "preconditions": "See environment and source commit",
+      "actions": "Jev clip signed popup retest",
+      "expected": "The described action succeeds and reports its result",
+      "actual": "New 0:05\u20130:15 job completed; 10.000-second 1280x720 H264/AAC MP4 fully decoded. Earlier failure cause remains unknown",
+      "status": "PASS",
+      "screenshot_id": null,
+      "date": "2026-11-04",
+      "os": "macOS 27.2",
+      "browser": "Zen 1.24b",
+      "source_commit": "a889ca6"
+    },
+    {
+      "id": "MAC-17",
+      "environment": "Mac Zen / signed 0.3.1 + installed a889ca6",
+      "scenario": "X signed popup retest",
+      "preconditions": "See environment and source commit",
+      "actions": "X signed popup retest",
+      "expected": "The described action succeeds and reports its result",
+      "actual": "Saved with no-audio warning; 101.923-second 720x738 H264 fully decoded; four direct alternatives probed video-only",
+      "status": "PASS",
+      "screenshot_id": null,
+      "date": "2026-11-04",
+      "os": "macOS 27.2",
+      "browser": "Zen 1.24b",
       "source_commit": "a889ca6"
     },
     {
@@ -825,7 +855,7 @@
     }
   ],
   "remaining_blockers": [
-    "Jev clip failed with unrecorded cause; X returned no-audio failure",
+    "Earlier Jev clip and X jobs failed with unrecorded or inconclusive cause; new signed-popup retests passed",
     "Provider coverage incomplete; installed a6664f7 N passed isolated local HLS, but live integrated UI coverage remains incomplete",
     "Guide is a local QA record; release approval and live provider coverage remain open"
   ],
@@ -837,7 +867,7 @@
   "current_install": {
     "companion_commit": "a889ca6",
     "status": "Installed after provider tests; queue database hash unchanged and rollback retained",
-    "provider_tests": "Provider outcomes recorded above used a6664f7; no provider retest on a889ca6"
+    "provider_tests": "Jev clip and X signed-popup retests used a889ca6; other provider outcomes list their tested build"
   },
   "single_attempt_clip_diagnostic": {
     "companion_commit": "a889ca6",
