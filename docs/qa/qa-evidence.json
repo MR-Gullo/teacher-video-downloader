@@ -809,6 +809,13 @@
     "status": "Installed after provider tests; queue database hash unchanged and rollback retained",
     "provider_tests": "Provider outcomes recorded above used a6664f7; no provider retest on a889ca6"
   },
+  "single_attempt_clip_diagnostic": {
+    "companion_commit": "a889ca6",
+    "scope": "One isolated engine acquisition with HTTP, fragment and extractor retries disabled; not a browser-started job",
+    "result": "Exit 0; 10.006-second 1280x720 H264/AC3 source fully decoded; no error categories",
+    "interpretation": "Does not establish the cause or change the status of the earlier failed browser-started job",
+    "receipt": "Local scratch receipt retained; raw engine output not persisted"
+  },
   "local_clip_check": {
     "scope": "Saved Jev full video cut locally with FFmpeg; not a retry of the failed provider clip job",
     "result": "10.000-second 0:05\u20130:15 H264/AAC clip fully decoded"
