@@ -20,6 +20,9 @@ async function page(userAgent, release, savedTheme = null) {
   assert.equal(p.document.documentElement.dataset.theme, 'light');
   assert.match(p.elements['release-state'].textContent, /being prepared/);
   const ready = {version: '0.3.1', firefoxXpi: 'https://addons.mozilla.org/firefox/downloads/file/123/test.xpi', windowsInstaller: 'https://github.com/MR-Gullo/teacher-video-downloader/releases/download/v0.3.1/test.exe', windowsSigned: false};
+  p = await page('Windows Firefox', {...ready, windowsInstaller: null});
+  assert(!p.elements['firefox-install'].hidden && p.elements['windows-companion'].hidden);
+  assert.match(p.elements['release-state'].textContent, /signed Firefox.*available/);
   p = await page('Windows Win64 x64 Firefox', ready, 'dark');
   assert(!p.elements['firefox-install'].hidden && !p.elements['windows-companion'].hidden);
   assert.equal(p.document.documentElement.dataset.theme, 'dark');

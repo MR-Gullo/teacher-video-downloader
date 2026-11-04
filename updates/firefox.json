@@ -1,7 +1,18 @@
 {
   "addons": {
     "teacher-video-downloader@local.invalid": {
-      "updates": []
+      "updates": [
+        {
+          "version": "0.3.1",
+          "update_link": "https://github.com/MR-Gullo/teacher-video-downloader/releases/download/v0.3.1/LessonShelf-firefox-0.3.1.xpi",
+          "update_hash": "sha256:e34add6d40b0767cf4e62fa584cf34c99a3275e7754f24372019bc1db4071876",
+          "applications": {
+            "gecko": {
+              "strict_min_version": "140.0"
+            }
+          }
+        }
+      ]
     }
   }
 }
