@@ -20,6 +20,7 @@ SCRIPTS = ROOT / 'scripts/macos'
 sys.path.insert(0, str(SCRIPTS))
 import install_payload as backend
 import build_installer as builder
+from verify_payload import NativeTransportError, native_doctor
 
 
 def fixture(payload, target=None, version='0.3.0'):
@@ -49,6 +50,76 @@ def fixture(payload, target=None, version='0.3.0'):
         p.relative_to(payload).as_posix(): backend.digest(p) for p in payload.rglob('*') if p.is_file()})
     (payload / 'payload.json').write_text(json.dumps(spec))
     return spec
+
+
+class NativeTransportTests(unittest.TestCase):
+    def request(self, script, **kwargs):
+        return native_doctor([sys.executable, '-u', '-c', script], dict(os.environ), **kwargs)
+
+    def test_reply_before_eof_with_partial_reads_and_large_stderr(self):
+        response, evidence = self.request('''import os, sys, struct, threading, json
+size = struct.unpack('=I', sys.stdin.buffer.read(4))[0]
+assert json.loads(sys.stdin.buffer.read(size)) == {'op': 'doctor'}
+eof = threading.Event()
+def wait_eof():
+    assert sys.stdin.buffer.read(1) == b''
+    eof.set()
+threading.Thread(target=wait_eof, daemon=True).start()
+if eof.wait(0.1): sys.exit(23)
+os.write(2, b'x' * 100000)
+body = json.dumps({'ok': True, 'doctor': {}}).encode()
+prefix = struct.pack('=I', len(body))
+for part in (prefix[:2], prefix[2:], body[:3], body[3:]): os.write(1, part)
+assert eof.wait(5)
+''')
+        self.assertTrue(response['ok'])
+        self.assertTrue(evidence['stdinOpenWhenResponseReceived'])
+        self.assertTrue(evidence['inputClosedAfterResponse'])
+        self.assertEqual(evidence['exitCode'], 0)
+        self.assertEqual(evidence['stdoutBytes'], 4 + evidence['frameDeclaredBytes'])
+        self.assertEqual(evidence['stderrBytes'], 100000)
+        self.assertEqual(len(evidence['stderr']), 4096)
+
+    def test_early_exit_retains_exit_code_and_empty_output_counts(self):
+        with self.assertRaises(NativeTransportError) as caught:
+            self.request('import sys; sys.stderr.write("fixture failure"); sys.exit(27)')
+        evidence = caught.exception.evidence
+        self.assertEqual(evidence['exitCode'], 27)
+        self.assertEqual(evidence['stdoutBytes'], 0)
+        self.assertEqual(evidence['stderrBytes'], len('fixture failure'))
+        self.assertEqual(evidence['stderr'], 'fixture failure')
+
+    def test_truncated_frame_retains_partial_response_count(self):
+        with self.assertRaises(NativeTransportError) as caught:
+            self.request('import os, struct; os.write(1, struct.pack("=I", 20) + b"{}")')
+        evidence = caught.exception.evidence
+        self.assertEqual(evidence['exitCode'], 0)
+        self.assertEqual(evidence['frameDeclaredBytes'], 20)
+        self.assertEqual(evidence['headerBytes'], 4)
+        self.assertEqual(evidence['responseBytes'], 2)
+
+    def test_missing_reply_times_out_and_reaps_child(self):
+        with self.assertRaises(NativeTransportError) as caught:
+            self.request('import sys; sys.stdin.buffer.read()', timeout=0.2)
+        evidence = caught.exception.evidence
+        self.assertTrue(evidence['timedOut'])
+        self.assertTrue(evidence['cleanupPerformed'])
+        self.assertIsNotNone(evidence['exitCode'])
+        self.assertEqual(evidence['phase'], 'read_response')
+        self.assertEqual(evidence['stdoutBytes'], 0)
+
+    def test_nonzero_exit_after_valid_reply_is_still_failure(self):
+        with self.assertRaises(NativeTransportError) as caught:
+            self.request('''import os, sys, struct
+body = b'{"ok":true}'
+os.write(1, struct.pack('=I', len(body)) + body)
+sys.stdin.buffer.read()
+sys.exit(29)
+''')
+        evidence = caught.exception.evidence
+        self.assertTrue(evidence['stdinOpenWhenResponseReceived'])
+        self.assertEqual(evidence['exitCode'], 29)
+        self.assertEqual(evidence['stdoutBytes'], 4 + evidence['frameDeclaredBytes'])
 
 
 class TransactionTests(unittest.TestCase):

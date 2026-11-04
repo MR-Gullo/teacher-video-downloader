@@ -6,10 +6,150 @@ import json
 import os
 from pathlib import Path
 import platform
+import queue
+import signal
 import struct
 import subprocess
 import tempfile
+import threading
 from install_payload import digest, install, validate, check_bundle, bundle_digest
+
+
+class NativeTransportError(RuntimeError):
+    def __init__(self, message, evidence):
+        super().__init__(message)
+        self.evidence = evidence
+
+
+def native_doctor(argv, env, timeout=60, exit_timeout=10):
+    """Receive one complete reply while the browser's input pipe remains open."""
+    evidence = {'launcher': str(argv[0]), 'requestBytesWritten': 0, 'stdoutBytes': 0,
+                'headerBytes': 0, 'responseBytes': 0, 'trailingStdoutBytes': 0, 'stderrBytes': 0,
+                'stdinOpenWhenResponseReceived': False, 'inputClosedAfterResponse': False,
+                'timedOut': False, 'cleanupPerformed': False, 'phase': 'start'}
+    options = {'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {'start_new_session': True}
+    try:
+        process = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   bufsize=0, env=env, **options)
+    except OSError as error:
+        evidence.update(ok=False, exitCode=None, stderr=str(error))
+        raise NativeTransportError('Native launcher could not start: ' + str(error), evidence) from error
+    evidence['pid'] = process.pid
+    replies = queue.Queue()
+    stderr = bytearray()
+
+    def read_exact(size, counter):
+        data = bytearray()
+        while len(data) < size:
+            chunk = process.stdout.read(size - len(data))
+            if not chunk:
+                raise RuntimeError('Native response ended before ' + counter)
+            data.extend(chunk)
+            evidence[counter] += len(chunk)
+            evidence['stdoutBytes'] += len(chunk)
+        return bytes(data)
+
+    def reader():
+        try:
+            prefix = read_exact(4, 'headerBytes')
+            size = struct.unpack('=I', prefix)[0]
+            evidence['frameDeclaredBytes'] = size
+            if not 0 < size <= 512 * 1024:
+                raise RuntimeError('Invalid native response frame length')
+            response = json.loads(read_exact(size, 'responseBytes'))
+            replies.put(response)
+            while chunk := process.stdout.read(8192):
+                evidence['stdoutBytes'] += len(chunk)
+                evidence['trailingStdoutBytes'] += len(chunk)
+        except Exception as error:
+            replies.put(error)
+
+    def error_reader():
+        try:
+            while chunk := process.stderr.read(8192):
+                evidence['stderrBytes'] += len(chunk)
+                stderr.extend(chunk[:max(0, 4096 - len(stderr))])
+        except (OSError, ValueError) as error:
+            evidence['stderrReadError'] = str(error)
+
+    threads = [threading.Thread(target=reader, daemon=True), threading.Thread(target=error_reader, daemon=True)]
+    for thread in threads:
+        thread.start()
+    failure = None
+    response = None
+    try:
+        evidence['phase'] = 'send_request'
+        message = json.dumps({'op': 'doctor'}).encode()
+        frame = struct.pack('=I', len(message)) + message
+        while evidence['requestBytesWritten'] < len(frame):
+            count = process.stdin.write(frame[evidence['requestBytesWritten']:])
+            if not count:
+                raise RuntimeError('Native request pipe closed')
+            evidence['requestBytesWritten'] += count
+        process.stdin.flush()
+        evidence['phase'] = 'read_response'
+        response = replies.get(timeout=timeout)
+        if isinstance(response, Exception):
+            raise response
+        evidence['stdinOpenWhenResponseReceived'] = not process.stdin.closed
+        if not isinstance(response, dict) or not response.get('ok'):
+            raise RuntimeError('Dependency doctor returned an unsuccessful response')
+        process.stdin.close()
+        evidence['inputClosedAfterResponse'] = True
+        evidence['phase'] = 'wait_for_exit'
+        process.wait(timeout=exit_timeout)
+        for thread in threads:
+            thread.join(timeout=1)
+        if process.returncode != 0:
+            raise RuntimeError('Native launcher exited with ' + str(process.returncode))
+        if any(thread.is_alive() for thread in threads):
+            raise RuntimeError('Native launcher left a response or error pipe open')
+        if 'stderrReadError' in evidence:
+            raise RuntimeError('Could not read native launcher error pipe')
+        if evidence['trailingStdoutBytes']:
+            raise RuntimeError('Unexpected bytes after the native response frame')
+        evidence['phase'] = 'complete'
+    except (queue.Empty, subprocess.TimeoutExpired):
+        evidence['timedOut'] = True
+        failure = 'Native launcher timed out during ' + evidence['phase']
+    except Exception as error:
+        failure = str(error)
+    finally:
+        try:
+            if process.poll() is None:
+                # Preserve a naturally exiting child's code before terminating a hung tree.
+                try:
+                    process.wait(timeout=0.2)
+                except subprocess.TimeoutExpired:
+                    evidence['cleanupPerformed'] = True
+                    if os.name == 'nt':
+                        subprocess.run(['taskkill', '/PID', str(process.pid), '/T', '/F'],
+                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+                    else:
+                        try:
+                            os.killpg(process.pid, signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+                    process.wait(timeout=10)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            evidence['cleanupError'] = str(error)
+            failure = failure or 'Native launcher cleanup failed'
+            if process.poll() is None:
+                process.kill()
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    pass
+        for stream in (process.stdin, process.stdout, process.stderr):
+            stream.close()
+        for thread in threads:
+            thread.join(timeout=1)
+        evidence['exitCode'] = process.returncode
+        evidence['stderr'] = stderr.decode(errors='replace')
+        evidence['ok'] = failure is None
+    if failure:
+        raise NativeTransportError(failure, evidence)
+    return response, evidence
 
 
 def n_identity_evidence(installed_payload, env):
@@ -89,16 +229,16 @@ console.log(JSON.stringify({version: Deno.version.deno, sum, permissions}));
     if not windows:
         identity_env = dict(env, TVD_STATE_DIR=str(base), YTDL_OUTPUT_DIR=str(account / 'Downloads/youtube-downloads'))
         evidence['N_m3u8DL-RE']['identity'] = n_identity_evidence(installed_payload, identity_env)
-    message = json.dumps({'op': 'doctor'}).encode()
     launcher = app / 'LessonShelf Companion.app/Contents/MacOS/LessonShelfHost' if companion_app else app / ('launch-host.exe' if windows else 'launch-host')
-    child = subprocess.run([str(launcher)], input=struct.pack('=I', len(message)) + message, capture_output=True, env=env, timeout=60)
-    if child.returncode or len(child.stdout) < 4:
-        raise RuntimeError('Native launcher failed: ' + child.stderr.decode(errors='replace')[:2000])
-    if struct.unpack('=I', child.stdout[:4])[0] != len(child.stdout[4:]):
-        raise RuntimeError('Invalid native-message framing')
-    doctor = json.loads(child.stdout[4:])
-    if not doctor.get('ok'):
-        raise RuntimeError('Dependency doctor failed')
+    try:
+        doctor, transport = native_doctor([str(launcher)], env)
+    except NativeTransportError as error:
+        evidence.update({'ok': False, 'errors': [str(error)], 'nativeTransport': error.evidence,
+                         'target': spec['target'], 'browserVerified': False, 'gatekeeperOrSmartScreenVerified': False})
+        report.parent.mkdir(parents=True, exist_ok=True)
+        report.write_text(json.dumps(evidence, indent=2) + '\n')
+        raise
+    evidence['nativeTransport'] = transport
     errors = []
     for tool in ('yt-dlp', 'ffmpeg', 'ffprobe', 'N_m3u8DL-RE'):
         # The runtime owns per-video N compatibility. It must still identify the installed tool.
