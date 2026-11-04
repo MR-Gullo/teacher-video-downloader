@@ -1,0 +1,5 @@
+# Keep the reviewed notice bytes identical in Mac and Windows checkouts.
+scripts/macos/licenses/deno-third-party/*.json text eol=lf
+scripts/macos/licenses/deno-third-party/*.txt text eol=lf
+scripts/macos/licenses/deno-third-party/*.zip -text
+scripts/macos/licenses/WINDOWS-FFMPEG-SOURCE-OFFER.json text eol=lf
