@@ -240,9 +240,11 @@ console.log(JSON.stringify({version: Deno.version.deno, sum, permissions}));
         raise
     evidence['nativeTransport'] = transport
     errors = []
-    for tool in ('yt-dlp', 'ffmpeg', 'ffprobe', 'N_m3u8DL-RE'):
+    for tool in ('yt-dlp', 'ffmpeg', 'ffprobe', 'N_m3u8DL-RE', 'deno'):
         # The runtime owns per-video N compatibility. It must still identify the installed tool.
-        if str(tools / (tool + ext)) not in json.dumps(doctor):
+        actual = doctor.get('doctor', {}).get(tool, {})
+        path = actual.get('path')
+        if not actual.get('available') or not path or Path(path).resolve() != (tools / (tool + ext)).resolve():
             errors.append('Doctor did not identify bundled ' + tool)
     source = work / 'synthetic-av1.mkv'; output = work / 'synthetic-h264.mp4'
     ffmpeg = str(tools / ('ffmpeg' + ext)); ffprobe = str(tools / ('ffprobe' + ext))
