@@ -6,7 +6,7 @@ LessonShelf saves permitted classroom videos and YouTube clips. It defaults to a
 
 Use the [LessonShelf installation page](https://mr-gullo.github.io/teacher-video-downloader/#setup). It shows only available release downloads. Install the Firefox extension, then the companion for your computer. Return to LessonShelf and choose **Check connection**.
 
-The Mozilla-signed Firefox / Zen 0.3.1 extension is available in the [testing release](https://github.com/MR-Gullo/teacher-video-downloader/releases/tag/v0.3.1). Windows companion publication is pending the final release checks. The Windows companion has passed real Windows Firefox fixture tests. It is not yet code-signed. The normal Mac installer still needs Developer ID signing and notarization. Chrome, Windows ARM64 and mobile browsers are outside this beta. Source archives and temporary add-ons are for development, not teacher installation.
+The Mozilla-signed Firefox / Zen 0.3.1 extension is available in the [testing release](https://github.com/MR-Gullo/teacher-video-downloader/releases/tag/v0.3.1). The Windows x64 companion is available from the installation page. See the [visual guide](docs/qa/LessonShelf-feature-and-UX-guide.pdf) for tested paths and current limits. The Windows companion has passed real Windows Firefox fixture tests. It is not yet code-signed. The normal Mac installer still needs Developer ID signing and notarization. Chrome, Windows ARM64 and mobile browsers are outside this beta. Source archives and temporary add-ons are for development, not teacher installation.
 
 ## Download a video
 

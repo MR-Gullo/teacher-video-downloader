@@ -1,6 +1,6 @@
 {
   "version": "0.3.1",
   "firefoxXpi": "https://github.com/MR-Gullo/teacher-video-downloader/releases/download/v0.3.1/LessonShelf-firefox-0.3.1.xpi",
-  "windowsInstaller": null,
+  "windowsInstaller": "https://github.com/MR-Gullo/teacher-video-downloader/releases/download/v0.3.1/LessonShelf-windows-x64.exe",
   "windowsSigned": false
 }
