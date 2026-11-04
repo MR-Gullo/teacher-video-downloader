@@ -13,6 +13,16 @@ Extension-owned popup/dashboard → background `sendNativeMessage` → framed st
 - Source validation uses ffprobe. Generated copies also undergo full FFmpeg decode, duration, audio/subtitle count, chapter count and frame-rate checks (0.2% tolerance for container time-base rounding). This is not a perceptual-quality guarantee. Failed source/copy processing does not delete original/partial files.
 - Final publication stages and fsyncs a complete file then atomically creates a hard link without overwrite. Stable job-specific names plus content hash make crash retry idempotent. Unsupported destination filesystems fail safely. Hidden `.tvd-publish-*` staging leftovers after a hard crash can be manually removed only after stopping work.
 
+## YouTube clips
+
+The popup reads the active YouTube watch-page player's video ID, current time and finite duration. Clip controls are optional and start with In at the current playhead, rounded down to a second, and Out at the end. Two timeline handles and editable time fields share one range. Unknown durations, live streams, ads and unsupported player contexts leave clipping unavailable.
+
+Before submission, the popup checks that the same page and video are still active. The native request carries an immutable `clip` object with `start`, `end` and source `duration`. The host rejects non-finite numbers, booleans and ranges outside `0 <= start < end <= duration`. The selected range participates in job deduplication and stays attached to retries and the saved filename.
+
+Clip requests use separate `enqueue-clip`, `resume-clip` and `retry-clip` operations. An older host rejects these operations instead of silently downloading the whole video. Ordinary enqueue rejects a clip payload. Clips use yt-dlp download sections and FFmpeg keyframe cuts, then the standard H.264/AAC MP4 output path. They omit captions and extra copies. The worker checks the resulting duration before publication; a mismatched full video cannot be reported as a saved clip. Source metadata and range provenance stay in private job storage, not beside the downloaded video.
+
+YouTube extraction uses the bundled Deno runtime through an explicit path. It disables remote components and unrelated system JavaScript runtimes. Both native launchers disable Deno update checks. Detached Python workers start with `-B` so they do not write bytecode inside the sealed application.
+
 ## Privacy
 
 Queue/state/app directory mode0700; host/worker umask0077. Full signed download URLs necessarily live in private job data for retry. Native status strips query tokens and bounds display fields. No raw engine output is persisted: only fixed progress/error text, avoiding accidental token logs. Processes still carry URL argv; other processes running as the same user may see them. This is not a hardened secret vault against same-user malware.
