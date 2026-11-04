@@ -71,6 +71,11 @@ jobs:
           $env:PATH = (Resolve-Path "$env:QA_ROOT/payload/tools").Path + ';' + $env:PATH
           & "$env:QA_ROOT/payload/runtime/python.exe" -B -m unittest discover -s tests -p test_clip_integration.py
           if ($LASTEXITCODE -ne 0) { throw 'Clip media acceptance failed' }
+      - name: Diagnose captured-console N engine on clear HLS
+        continue-on-error: true
+        run: |
+          python tests/n_engine_acceptance.py --payload "$env:QA_ROOT/payload" --report "$env:QA_ROOT/reports/n-engine.json" --work "$env:QA_ROOT/n-engine-check"
+          if ($LASTEXITCODE -ne 0) { throw 'N engine diagnostic failed; inspect n-engine.json separately from fallback acceptance' }
       - name: Prepare the Firefox extension
         run: |
           $xpi = "$env:QA_ROOT/lessonshelf.xpi"
