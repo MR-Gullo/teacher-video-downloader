@@ -51,9 +51,28 @@ class ClipIntegration(unittest.TestCase):
      row=db.execute('SELECT * FROM jobs').fetchone();real=worker.engine_argv
      def local_argv(*args,**kwargs):
       argv=real(*args,**kwargs);argv[-1]=f'http://127.0.0.1:{server.server_port}/fixture.mp4';return argv
-     fd=os.open(root/'lock',os.O_CREAT|os.O_RDWR,0o600)
+     fd=os.open(root/'lock',os.O_CREAT|os.O_RDWR,0o600);started=threading.Event();proceed=threading.Event();errors=[];real_run=worker.run
+     def slow_run(*args,**kwargs):
+      started.set()
+      if not proceed.wait(10):raise RuntimeError('Test download was not released')
+      return real_run(*args,**kwargs)
+     def first_job():
+      connection=core.setup()
+      try:worker.process(connection,connection.execute('SELECT * FROM jobs WHERE id=?',(row['id'],)).fetchone(),fd)
+      except Exception as e:errors.append(e)
+      finally:connection.close()
      try:
-      with patch.object(worker,'engine_argv',side_effect=local_argv):worker.process(db,row,fd)
+      with patch.object(worker,'engine_argv',side_effect=local_argv),patch.object(worker,'run',side_effect=slow_run):
+       job_thread=threading.Thread(target=first_job);job_thread.start()
+       try:
+        self.assertTrue(started.wait(10),'first clip did not start')
+        before=db.execute('SELECT status,attempts,data FROM jobs WHERE id=?',(row['id'],)).fetchone()
+        second=core.handle({'op':'enqueue-clip','jobs':[{'url':url,'clip':{'start':6,'end':9,'duration':10},'captions':False}]},False)['jobIds'][0]
+        self.assertNotEqual(second,row['id']);self.assertEqual(tuple(before),tuple(db.execute('SELECT status,attempts,data FROM jobs WHERE id=?',(row['id'],)).fetchone()));self.assertEqual(before['status'],'running')
+        self.assertEqual(db.execute('SELECT status FROM jobs WHERE id=?',(second,)).fetchone()[0],'queued')
+       finally:proceed.set();job_thread.join(timeout=60)
+       self.assertFalse(job_thread.is_alive());self.assertEqual(errors,[])
+       worker.process(db,db.execute('SELECT * FROM jobs WHERE id=?',(second,)).fetchone(),fd)
      finally:os.close(fd)
      result=db.execute('SELECT status,files FROM jobs').fetchone();self.assertEqual(result['status'],'complete')
      files=json.loads(result['files']);self.assertEqual(len(files),1);output=Path(files[0]);self.assertIn('00h00m02s000-00h00m06s000',output.name)
@@ -63,6 +82,9 @@ class ClipIntegration(unittest.TestCase):
       actual=frame(output,clip_time);expected=frame(video,clip_time+2);self.assertEqual(len(actual),len(expected));self.assertLess(sum(abs(a-b) for a,b in zip(actual,expected))/len(actual),15,'Clip frame did not match the selected source section')
      private=json.loads((root/'state/jobs'/row['id']/'provenance.json').read_text());self.assertEqual(private['clip'],{'start':2,'end':6,'duration':10})
      subprocess.run(['ffmpeg','-v','error','-xerror','-i',str(output),'-f','null','-'],check=True,timeout=60)
+     later=db.execute('SELECT status,files FROM jobs WHERE id=?',(second,)).fetchone();self.assertEqual(later['status'],'complete');later_file=Path(json.loads(later['files'])[0]);self.assertTrue(worker.clip_duration_ok(worker.probe(later_file),{'start':6,'end':9,'duration':10}));subprocess.run(['ffmpeg','-v','error','-xerror','-i',str(later_file),'-f','null','-'],check=True,timeout=60)
+     for clip_time in (.5,2.5):
+      actual=frame(later_file,clip_time);expected=frame(video,clip_time+6);self.assertEqual(len(actual),len(expected));self.assertLess(sum(abs(a-b) for a,b in zip(actual,expected))/len(actual),15,'Second clip frame did not match its selected source section')
      self.assertEqual(list((root/'out').glob('*.json')),[]);db.close()
    finally:server.shutdown();server.server_close();thread.join(timeout=5)
 

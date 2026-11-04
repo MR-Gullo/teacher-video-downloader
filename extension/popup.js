@@ -8,7 +8,7 @@ const revealLabel=windows?'Show in folder':'Show in Finder';
 if(windows){$('setup-link').href='setup-windows.html';$('setup-link').textContent='Windows setup for this preview';}
 const dataPermissions={data_collection:['browsingActivity','websiteContent']};
 const settingIds=['quality','audio','captions','copy','course','output-format'];
-let source=null,players=[],pageSnapshot=null,consent=!firefox,busy=false,polling=false,lastJobId=null,lastDownload=null,lastDownloads=[],lastRenderedJobs='',currentJob=null,lastJobs=[],pasteBinding=null,jobStatusText='',clipPrevious=null;
+let source=null,players=[],pageSnapshot=null,consent=!firefox,busy=false,polling=false,lastJobId=null,lastDownload=null,lastDownloads=[],lastRenderedJobs='',lastActiveClips='',currentJob=null,lastJobs=[],pasteBinding=null,jobStatusText='',clipPrevious=null;
 function setStatus(text){$('status').textContent=text||'';}
 function validURL(value){const u=new URL(value);if(!['http:','https:'].includes(u.protocol)||u.username||u.password)throw new Error('Enter an HTTP or HTTPS link without credentials.');return u.href;}
 function safeSite(value){try{return new URL(value).hostname}catch{return ''}}
@@ -93,12 +93,16 @@ function beginDownload(){
 function renderCurrent(jobs){
   lastJobs=jobs;
   const selected=selectedPlayer();const bound=lastDownload&&source&&pageSnapshot&&lastDownload.tabId===source.id&&lastDownload.stamp===pageSnapshot.documentStamp&&(lastDownload.playerIndex===undefined?players.length<=1:lastDownload.playerIndex===(selected?.index??null))&&(lastDownload.videoId||null)===(pageSnapshot.youtube?.id||null)&&(lastDownload.clipKey||'full')===currentClipKey();
+  const related=lastDownloads.filter(x=>source&&pageSnapshot&&x.tabId===source.id&&x.stamp===pageSnapshot.documentStamp&&x.playerIndex===(selected?.index??null)&&x.videoId===pageSnapshot.youtube?.id);
+  const relevant=related.map(x=>jobs.find(job=>job.id===x.id&&job.clip)).filter(Boolean),activeClips=relevant.filter(job=>activeStatuses.includes(job.status)),recentFinished=relevant.find(job=>['complete','complete-warning','failed','cancelled'].includes(job.status));
+  const visibleClips=[...activeClips,...(recentFinished?[recentFinished]:[])],clipsView=$('active-clip-progress'),clipSignature=JSON.stringify(visibleClips.map(j=>[j.id,j.status,j.progress,j.message,j.clip]));clipsView.hidden=!visibleClips.length;
+  if(clipSignature!==lastActiveClips){lastActiveClips=clipSignature;clipsView.replaceChildren();for(const clip of visibleClips){const label=document.createElement('div');label.className='job-message';label.textContent=`${jobLabel(clip)} · Clip ${timeText(clip.clip.start)}–${timeText(clip.clip.end)}`;clipsView.append(label);if(activeStatuses.includes(clip.status)){const bar=document.createElement('progress');bar.max=100;bar.setAttribute('aria-label',`Progress for clip ${timeText(clip.clip.start)} to ${timeText(clip.clip.end)}`);if(clip.status==='running'&&clip.message==='Downloading'&&Number.isFinite(clip.progress))bar.value=Math.max(0,Math.min(100,clip.progress));clipsView.append(bar)}}}
   const previous=currentJob,usingPaste=!$('paste-area').hidden;let pastedURL='';try{if(usingPaste)pastedURL=validURL($('url').value.trim())}catch{}
   if(usingPaste)currentJob=pasteBinding&&pasteBinding.url===pastedURL?jobs.find(x=>x.id===pasteBinding.id)||null:null;
   else currentJob=bound?jobs.find(x=>x.id===lastDownload.id)||null:null;
   if(previous&&!currentJob&&!busy&&$('status').textContent===jobStatusText){setStatus('');jobStatusText=''}
   const job=boundJob(),progress=$('download-progress');
-  progress.hidden=!(busy||(job&&activeStatuses.includes(job.status)));
+  progress.hidden=!(busy||(job&&activeStatuses.includes(job.status)))||Boolean(!busy&&job?.clip&&activeClips.some(active=>active.id===job.id));
   if(!progress.hidden){const known=!busy&&job&&job.status==='running'&&job.message==='Downloading'&&Number.isFinite(job.progress);if(known){progress.value=Math.max(0,Math.min(100,job.progress));}else progress.removeAttribute('value');}
   if(job&&!busy&&$('queue-view').hidden){let message=jobMessage(job)||jobLabel(job);if(activeStatuses.includes(job.status)){message=jobLabel(job);if(!progress.hidden&&progress.hasAttribute?.('value'))message+=` (${Math.round(job.progress)}%)`;}setStatus(message);jobStatusText=message}
   showSource();
