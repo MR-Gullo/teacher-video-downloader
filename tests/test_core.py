@@ -151,6 +151,15 @@ class Core(unittest.TestCase):
   d=core.normalize({'url':'https://example.com/video.m3u8','engine':'n','quality':'720'});a=core.engine_argv(d,Path('/tmp/job'));pattern=a[a.index('-sv')+1].removeprefix('res=').removesuffix(':for=best')
   for resolution in ('1280x720','720x1280','404x720'):self.assertIsNotNone(re.fullmatch(pattern,resolution))
   for resolution in ('1920x1080','1080x1920'):self.assertIsNone(re.fullmatch(pattern,resolution))
+ def test_480_quality_selection_and_resolution(self):
+  d=core.normalize({'url':'https://example.com/video.m3u8','engine':'n','quality':'480'})
+  a=core.engine_argv(d,Path('/tmp/job'));pattern=a[a.index('-sv')+1].removeprefix('res=').removesuffix(':for=best')
+  for resolution in ('854x480','480x854','320x240'):self.assertIsNotNone(re.fullmatch(pattern,resolution))
+  for resolution in ('1280x720','720x1280','481x854'):self.assertIsNone(re.fullmatch(pattern,resolution))
+  d['engine']='yt-dlp';a=core.engine_argv(d,Path('/tmp/job'));self.assertIn('res:480,vcodec:h264,acodec:aac',a)
+  with patch('resolve.resolve',return_value=None) as resolve:
+   core.handle({'op':'resolve','candidates':[],'duration':60,'quality':'480'})
+   self.assertEqual(resolve.call_args.args[2],480)
  def test_no_secrets_status(self):
   r=core.handle({'op':'enqueue','jobs':[{'url':'https://x/a?token=secret'}]},False)
   self.assertNotIn('secret',json.dumps(r))

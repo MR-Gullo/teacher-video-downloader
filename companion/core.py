@@ -48,7 +48,7 @@ def normalize(j):
     if not isinstance(j,dict): raise ValueError('Invalid job')
     u=valid_url(j.get('url',''))
     engine=j.get('engine','auto'); quality=str(j.get('quality','720')); copy=j.get('copy','none'); output_format=j.get('outputFormat','standard')
-    if engine not in ('yt-dlp','n','auto') or quality not in ('1080','720','best') or copy not in ('none','classroom','av1') or output_format not in ('standard','original','av1'): raise ValueError('Invalid settings')
+    if engine not in ('yt-dlp','n','auto') or quality not in ('1080','720','480','best') or copy not in ('none','classroom','av1') or output_format not in ('standard','original','av1'): raise ValueError('Invalid settings')
     if j.get('cookies') or j.get('headers'): raise ValueError('Authentication transfer is not enabled in this build')
     page=valid_url(j['pageUrl']) if j.get('pageUrl') else u
     result=dict(url=u,pageUrl=public_url(page),title=safe_name(j.get('title') or urlsplit(u).hostname),engine=engine,quality=quality,copy=copy,outputFormat=output_format,audio=bool(j.get('audio',False)),captions=bool(j.get('captions',True)),course=safe_name(j['course']) if j.get('course') else '',verifiedManifest=bool(j.get('verifiedManifest',False)))
@@ -199,7 +199,7 @@ def handle(req, start=True):
         candidates=req.get('candidates',[])
         if not isinstance(candidates,list) or len(candidates)>24:raise ValueError('Too many media candidates')
         candidates=[valid_url(x) for x in candidates]
-        duration=req.get('duration');quality=req.get('quality','720');limit=1080 if quality=='1080' else 720
+        duration=req.get('duration');quality=req.get('quality','720');limit={'480':480,'720':720,'1080':1080}.get(quality,720)
         found=resolve(candidates,duration,limit)
         return {'ok':True,'url':found}
     db=setup();result={'ok':True}
@@ -247,6 +247,7 @@ def handle(req, start=True):
 
 def quality_resolution_pattern(quality):
     bounded=r'([1-9][0-9]?|[1-6][0-9]{2}|7[01][0-9]|720)'
+    if quality=='480':bounded=r'([1-9][0-9]?|[1-3][0-9]{2}|4[0-7][0-9]|480)'
     if quality=='1080':bounded=r'([1-9][0-9]?|[1-9][0-9]{2}|10[0-7][0-9]|1080)'
     return f'^([0-9]+x{bounded}|{bounded}x[0-9]+)$'
 
