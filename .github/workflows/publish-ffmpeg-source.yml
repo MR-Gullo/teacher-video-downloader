@@ -1,0 +1,39 @@
+name: Publish pinned Windows FFmpeg source
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  publish-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Fetch and verify exact upstream corresponding source
+        run: |
+          mkdir -p .scratch/source-offer
+          gh api /repos/yt-dlp/FFmpeg-Builds/actions/artifacts/13184773401/zip > .scratch/source-offer/cache.zip
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,json
+          root=Path('.scratch/source-offer')
+          source=root/'cache.zip'
+          with source.open('rb') as stream:
+              digest=hashlib.file_digest(stream,'sha256').hexdigest()
+          if digest != 'd1227e4097221070f31403b64bb18478360f56b2ebc64e2edf617bbeb8118ad2':
+              raise SystemExit('Upstream source cache hash mismatch')
+          review=json.loads(Path('scripts/macos/licenses/WINDOWS-FFMPEG-SOURCE-OFFER.json').read_text())
+          with source.open('rb') as stream:
+              for asset in review['sourceAssets']:
+                  if not asset['filename'].startswith('ffmpeg-source-cache.zip.part'):
+                      continue
+                  data=stream.read(asset['bytes'])
+                  if hashlib.sha256(data).hexdigest()!=asset['sha256']:
+                      raise SystemExit('Source part hash mismatch')
+                  (root/asset['filename']).write_bytes(data)
+              if stream.read(1): raise SystemExit('Unexpected trailing source data')
+          PY
+      - name: Publish verified parts alongside the binary release
+        run: gh release upload v0.3.1 .scratch/source-offer/ffmpeg-source-cache.zip.part* --repo MR-Gullo/teacher-video-downloader
