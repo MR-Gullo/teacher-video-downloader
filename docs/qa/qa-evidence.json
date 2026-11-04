@@ -307,6 +307,36 @@
       "source_commit": "406c096"
     },
     {
+      "id": "WIN-07",
+      "environment": "Windows x64 Firefox signed 0.3.1 / a889ca6 / run 41812245946",
+      "scenario": "Final signed add-on local fixture",
+      "preconditions": "See environment and source commit",
+      "actions": "Final signed add-on local fixture",
+      "expected": "The described action succeeds and reports its result",
+      "actual": "Progress, queue reopening, browser-close transfer, worker-crash isolation and required tool checks passed; 1280x720 H264/AAC",
+      "status": "PASS",
+      "screenshot_id": null,
+      "date": "2026-11-04",
+      "os": "Windows x64",
+      "browser": "Firefox",
+      "source_commit": "a889ca6"
+    },
+    {
+      "id": "WIN-08",
+      "environment": "Windows x64 / a889ca6 / run 41812245946",
+      "scenario": "Final N captured pipe diagnostic",
+      "preconditions": "See environment and source commit",
+      "actions": "Final N captured pipe diagnostic",
+      "expected": "The described action succeeds and reports its result",
+      "actual": "Clear local HLS: N exit 0; H264/AAC output fully decoded; fixture test",
+      "status": "PASS",
+      "screenshot_id": null,
+      "date": "2026-11-04",
+      "os": "Windows x64",
+      "browser": "Firefox",
+      "source_commit": "a889ca6"
+    },
+    {
       "id": "MAC-13",
       "environment": "Mac Zen / signed 0.3.1 + installed a6664f7",
       "scenario": "Popup defaults and tools",
@@ -812,7 +842,7 @@
   "single_attempt_clip_diagnostic": {
     "companion_commit": "a889ca6",
     "scope": "One isolated engine acquisition with HTTP, fragment and extractor retries disabled; not a browser-started job",
-    "result": "Exit 0; 10.006-second 1280x720 H264/AC3 source fully decoded; no error categories",
+    "result": "Exit 0; 10.006-second 1280x720 H264/AC3 source fully decoded; no error categories. Standard conversion and validation produced a 10.000-second H264/AAC MP4 with full decode",
     "interpretation": "Does not establish the cause or change the status of the earlier failed browser-started job",
     "receipt": "Local scratch receipt retained; raw engine output not persisted"
   },
