@@ -472,6 +472,21 @@
       "source_commit": "781e325"
     },
     {
+      "id": "MAC-12",
+      "environment": "Installed companion a6664f7",
+      "scenario": "Clear local HLS in isolated queue",
+      "preconditions": "See environment and source commit",
+      "actions": "Clear local HLS in isolated queue",
+      "expected": "The described action succeeds and reports its result",
+      "actual": "Bundled N exit 0 with PTY; no yt-dlp fallback; H264 640x360 and AAC fully decoded, no adjacent JSON",
+      "status": "PASS",
+      "screenshot_id": null,
+      "date": "2026-11-04",
+      "os": "macOS 27.2",
+      "browser": "See environment",
+      "source_commit": "a6664f7"
+    },
+    {
       "id": "AUT-06",
       "environment": "Installed N binary / local PTY",
       "scenario": "Clear local HLS diagnostic",
@@ -721,12 +736,55 @@
   ],
   "remaining_blockers": [
     "Updated popup native verification pending",
-    "Provider coverage incomplete; installed 781e325 N falls back after a captured-console error; source fix needs installed verification",
+    "Provider coverage incomplete; installed a6664f7 N passed isolated local HLS, but live integrated UI coverage remains incomplete",
     "Guide is a local QA record; release approval and live provider coverage remain open"
   ],
   "ui_hypotheses": [
     "Check whether status feedback remains visible when Help is expanded below the fold",
     "Inspect truncated video format label at narrow popup widths",
     "Evaluate whether consent and download should be separable for first-time diagnosis"
-  ]
+  ],
+  "installed_a6664f7_hls": {
+    "candidate": "a6664f7",
+    "environment": "installed Mac companion; isolated temporary state and localhost fixture",
+    "installed_worker_sha256": "2e695374739be389f175c9508a478c29b48577cb357ccad5019d7d0ee1eb7c85",
+    "installed_n_sha256": "52d936bf7517442b18aa5b661b6a1b99f757f1e82b98053f18e06456603b92ba",
+    "status": "complete",
+    "calls": [
+      {
+        "program": "N_m3u8DL-RE",
+        "terminal": true,
+        "exit": 0
+      },
+      {
+        "program": "ffmpeg",
+        "terminal": false,
+        "exit": 0
+      },
+      {
+        "program": "ffmpeg",
+        "terminal": false,
+        "exit": 0
+      },
+      {
+        "program": "ffmpeg",
+        "terminal": false,
+        "exit": 0
+      }
+    ],
+    "full_decode": true,
+    "adjacent_json": false,
+    "streams": [
+      {
+        "codec_name": "h264",
+        "codec_type": "video",
+        "width": 640,
+        "height": 360
+      },
+      {
+        "codec_name": "aac",
+        "codec_type": "audio"
+      }
+    ]
+  }
 }
