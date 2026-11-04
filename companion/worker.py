@@ -45,7 +45,7 @@ def run_windows(db,id,argv,phase,diagnostic):
                 send(block)
         finally:send(None)
     threading.Thread(target=reader,daemon=True).start()
-    buf=b'';last=0;ended=False
+    buf=b'';last=0;ended=False;observed=set()
     while not ended or CHILD.poll() is None:
         row=db.execute('SELECT status FROM jobs WHERE id=?',(id,)).fetchone()
         if STOP or not row or row[0]!=phase:
@@ -56,12 +56,12 @@ def run_windows(db,id,argv,phase,diagnostic):
         try:chunk=output.get(timeout=.2)
         except queue.Empty:continue
         if chunk is None:ended=True;continue
-        buf=(buf+chunk)[-16384:]
+        buf=(buf+chunk)[-16384:];observed.update(output_categories(buf))
         matches=re.findall(rb'TVD:\s*([0-9.]+)%',buf)
         if matches and time.time()-last>.5:
             update(db,id,progress=min(99,float(matches[-1])),message='Downloading');last=time.time();buf=b''
     done.set();CHILD.stdout.close()
-    if diagnostic is not None:diagnostic.extend(output_categories(buf))
+    if diagnostic is not None:diagnostic.extend(sorted(observed | set(output_categories(buf))))
     return CHILD.returncode
 
 def output_categories(output):
@@ -76,12 +76,20 @@ def output_categories(output):
     if any(x in text for x in (b'widevine',b'playready',b'drm protected',b'drm protection',b'encrypted content',b'geoblock',b'geo-block',b'not available in your country',b'451 unavailable')):categories.append('protected')
     if any(x in text for x in (b'unrecognized option',b'unknown option',b'unrecognized command or argument')):categories.append('unsupported_option')
     if b'unhandled exception' in text and b'spectre.console' in text:categories.append('engine_console_error')
+    if re.search(rb'(?:error:.*ffmpeg.*(?:exited|failed|error)|conversion failed!)',text):categories.append('ffmpeg_error')
+    if re.search(rb'(?:unable to download video data|unable to extract|failed to extract)',text):categories.append('source_retrieval_error')
     return categories
+
+def failure_category(diagnostic):
+    # Only fixed labels enter job state; engine output may contain secrets.
+    for key,message in (('ffmpeg_error','FFmpeg reported an error'),('source_retrieval_error','media retrieval or extraction failed'),('unsupported_option','the downloader rejected an option'),('engine_console_error','the downloader console failed')):
+        if key in diagnostic:return message
+    return 'the downloader did not provide a recognized error category'
 
 def run(db,id,argv,lockfd,phase='running',diagnostic=None,terminal=False):
     global CHILD
     if sys.platform=='win32':return run_windows(db,id,argv,phase,diagnostic)
-    master=slave=None;child=None;buf=b'';last=0;eof=False
+    master=slave=None;child=None;buf=b'';last=0;eof=False;observed=set()
     use_pty=terminal and sys.platform=='darwin'
     try:
         if use_pty:
@@ -102,7 +110,7 @@ def run(db,id,argv,lockfd,phase='running',diagnostic=None,terminal=False):
                 if use_pty and e.errno==errno.EIO:eof=True;return
                 raise
             if not chunk:eof=True;return
-            buf=(buf+chunk)[-16384:]
+            buf=(buf+chunk)[-16384:];observed.update(output_categories(buf))
             # Never persist arbitrary engine output: it can contain signed URLs/tokens.
             matches=re.findall(rb'TVD:\s*([0-9.]+)%',buf)
             if matches and time.time()-last>.5:
@@ -125,7 +133,7 @@ def run(db,id,argv,lockfd,phase='running',diagnostic=None,terminal=False):
             ready,_,_=select.select([fd],[],[],0)
             if not ready:break
             read_output()
-        if diagnostic is not None:diagnostic.extend(output_categories(buf))
+        if diagnostic is not None:diagnostic.extend(sorted(observed | set(output_categories(buf))))
         return child.returncode
     finally:
         if child is not None and child.poll() is None:
@@ -283,9 +291,10 @@ def process(db,r,lockfd):
         if 'unsupported_url' in diagnostic:
             transition(db,id,'running',status='failed',message='This page is not supported by the downloader. Try a direct video link; some sites do not expose downloadable media. Partial files retained.')
             return
+        reason=failure_category(diagnostic)
         if r['attempts']<2:
-            transition(db,id,'running',status='retrying',next_at=time.time()+min(60,2**(r['attempts']+1)),message='Network/engine failure; bounded retry pending. Partials retained. Expired URLs may need refreshing.');return
-        raise RuntimeError('Engine failed after 3 attempts. Original/partial files retained. Check access, URL expiry and dependency versions; no DRM bypass is supported.')
+            transition(db,id,'running',status='retrying',next_at=time.time()+min(60,2**(r['attempts']+1)),message=f'Last attempt: {reason}. Bounded retry pending; partial files retained.');return
+        raise RuntimeError(f'Engine failed after 3 attempts. Last attempt: {reason}. Original/partial files retained.')
     sources=[p for p in work.glob('source.*') if p.suffix.lower() in ('.mkv','.mp4','.webm','.m4a','.mp3','.opus','.mov','.ts') and p.is_file()]
     if not sources:raise RuntimeError('Engine reported success but no output media was found')
     source=max(sources,key=lambda p:p.stat().st_size);info=probe(source)

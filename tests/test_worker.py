@@ -236,6 +236,29 @@ class Worker(unittest.TestCase):
    def run_once(db,id,argv,lockfd,**kwargs):calls.append(argv);kwargs['diagnostic'].extend(categories);return 1
    with patch.object(worker,'run',side_effect=run_once):worker.process(db,r,1)
    self.assertEqual(len(calls),1);self.assertEqual(db.execute('SELECT status FROM jobs').fetchone()[0],'failed');db.close()
+ def test_safe_failure_categories_survive_retry_and_final_failure(self):
+  cases=[(b'ERROR: ffmpeg exited with code 1 https://example.com/?token=secret','ffmpeg_error','FFmpeg reported an error'),(b'ERROR: Unable to download video data: failure https://example.com/?token=secret','source_retrieval_error','media retrieval or extraction failed'),(b'ERROR: mystery https://example.com/?token=secret',None,'did not provide a recognized error category')]
+  for output,category,expected in cases:
+   with self.subTest(category=category),tempfile.TemporaryDirectory() as d:
+    categories=worker.output_categories(output)
+    if category:self.assertIn(category,categories)
+    core.STATE=Path(d);worker.STATE=core.STATE;db=core.setup();core.handle({'op':'enqueue-clip','jobs':[{'url':'https://www.youtube.com/watch?v=abcdefghijk','clip':{'start':5,'end':15,'duration':100},'captions':False}]},False)
+    row=db.execute('SELECT * FROM jobs').fetchone()
+    def failed(*args,**kwargs):kwargs['diagnostic'].extend(categories);return 1
+    with patch.object(worker,'run',side_effect=failed):
+     worker.process(db,row,1);retry=db.execute('SELECT status,message FROM jobs').fetchone();self.assertEqual(retry['status'],'retrying');self.assertIn(expected,retry['message']);self.assertNotIn('secret',retry['message'])
+     db.execute("UPDATE jobs SET status='queued',attempts=2");db.commit();row=db.execute('SELECT * FROM jobs').fetchone()
+     with self.assertRaises(RuntimeError) as e:worker.process(db,row,1)
+     self.assertIn(expected,str(e.exception));self.assertNotIn('secret',str(e.exception))
+    db.close()
+  self.assertNotIn('source_retrieval_error',worker.output_categories(b'https://example.com/unable%20to%20extract?token=secret'))
+ def test_error_classification_survives_progress_reset(self):
+  import os
+  with tempfile.TemporaryDirectory() as d:
+   core.STATE=Path(d);db=core.setup();core.handle({'op':'enqueue','jobs':[{'url':'https://example.com/video'}]},False);row=db.execute('SELECT * FROM jobs').fetchone();core.update(db,row['id'],status='running');fd=os.open(Path(d)/'lock',os.O_CREAT|os.O_RDWR,0o600);diagnostic=[]
+   command=[sys.executable,'-c',"import sys,time;print('ERROR: ffmpeg exited with code 1',flush=True);time.sleep(.3);print('TVD: 42%',flush=True);sys.exit(1)"]
+   try:self.assertEqual(worker.run(db,row['id'],command,fd,diagnostic=diagnostic),1);self.assertIn('ffmpeg_error',diagnostic)
+   finally:os.close(fd);db.close()
  def test_rate_limit_is_not_retried_or_treated_as_url_text(self):
   self.assertIn('rate_limited',worker.output_categories(b'ERROR: HTTP Error 429: Too Many Requests'))
   self.assertNotIn('rate_limited',worker.output_categories(b'Loading https://example.com/video?token=429'))
